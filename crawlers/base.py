@@ -25,8 +25,26 @@ def fetch(url: str, timeout: int = 20) -> str:
     r.raise_for_status()
     return r.text
 
+import os
+from bs4 import BeautifulSoup, FeatureNotFound
+
 def soupify(html: str) -> BeautifulSoup:
-    return BeautifulSoup(html, "lxml")
+    """
+    Use lxml if installed; otherwise fall back to Python's built-in html.parser.
+    You can force a parser via .env: BS_PARSER=html.parser or lxml
+    """
+    preferred = (os.getenv("BS_PARSER") or "").strip()
+    candidates = [preferred] if preferred else []
+    candidates += ["lxml", "html.parser"]
+
+    for parser in candidates:
+        try:
+            return BeautifulSoup(html, parser)
+        except FeatureNotFound:
+            continue
+    # final fallback
+    return BeautifulSoup(html, "html.parser")
+
 
 # -------------------- Salary parsing (robust) --------------------
 
