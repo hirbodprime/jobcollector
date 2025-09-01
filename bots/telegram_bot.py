@@ -256,16 +256,25 @@ async def post_new_items_job(context: ContextTypes.DEFAULT_TYPE):
 async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("pong")
 
+
 def build_application(bot_token: str, target_channel: str, post_interval_seconds: int = 10):
-    """Build PTB Application with an explicit JobQueue."""
-    app = Application.builder().token(bot_token).job_queue(JobQueue()).build()
-    app.add_handler(CommandHandler("ping", ping))
+    # ⬇️ Disable the Updater to avoid PTB 20.8 + Python 3.13 issue
+    app = (
+        Application.builder()
+        .token(bot_token)
+        .job_queue(JobQueue())
+        .updater(None)          # <<< important
+        .build()
+    )
+
+    # You can keep the /ping handler, but without Updater/polling it won't receive updates.
+    # app.add_handler(CommandHandler("ping", ping))
 
     if app.job_queue:
         app.job_queue.run_repeating(
             post_new_items_job,
             interval=post_interval_seconds,
-            first=0,  # start immediately
+            first=0,
         )
 
     app.bot_data["target_channel"] = target_channel
