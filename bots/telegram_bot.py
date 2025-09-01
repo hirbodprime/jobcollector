@@ -256,21 +256,16 @@ async def post_new_items_job(context: ContextTypes.DEFAULT_TYPE):
 async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("pong")
 
-
 def build_application(bot_token: str, target_channel: str, post_interval_seconds: int = 10):
-    app = (
-        Application.builder()
-        .token(bot_token)
-        .job_queue(JobQueue())
-        .build()
-    )
+    """Build PTB Application with an explicit JobQueue."""
+    app = Application.builder().token(bot_token).job_queue(JobQueue()).build()
+    app.add_handler(CommandHandler("ping", ping))
 
-    # still schedule jobs
     if app.job_queue:
         app.job_queue.run_repeating(
             post_new_items_job,
             interval=post_interval_seconds,
-            first=0,
+            first=0,  # start immediately
         )
 
     app.bot_data["target_channel"] = target_channel
