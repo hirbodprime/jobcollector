@@ -723,6 +723,783 @@ def scrape_devfolio() -> list[dict]:
         }
         out.append(item)
     return normalize_items(out)
+# -------------------------------
+# IRANIAN JOB BOARDS (take ALL jobs; no remote filter)
+# -------------------------------
+
+def scrape_jobinja() -> list[dict]:
+    html = fetch("https://jobinja.ir/jobs")
+    s = soupify(html)
+    out: list[dict] = []
+    for a in s.select("a[href^='/jobs/']"):
+        link = urljoin("https://jobinja.ir", a.get("href", ""))
+        title = a.get_text(" ", strip=True)
+        card = a.find_parent(["article", "li", "div"])
+        comp = (card.select_one(".c-jobList__meta-item--company, [class*='company']") or {}).get_text(" ", strip=True) if card else ""
+        loc  = (card.select_one(".c-jobList__meta-item--location, [class*='location']") or {}).get_text(" ", strip=True) if card else ""
+        meta = " ".join(x.get_text(" ", strip=True) for x in (card.select("span,div,li") if card else []))
+        if not title or not link:
+            continue
+        item = {
+            "title": title,
+            "description": _clip(meta),
+            "link": link,
+            "category": "JOB",
+            "company": comp,
+            "location": loc or "",
+            "extras": {},
+        }
+        out.append(_with_salary_fields(item, f"{title} {comp} {loc} {meta}"))
+    return normalize_items(out)
+
+def scrape_jobvision() -> list[dict]:
+    html = fetch("https://jobvision.ir/jobs")
+    s = soupify(html)
+    out: list[dict] = []
+    for a in s.select("a[href^='/jobs/']"):
+        link = urljoin("https://jobvision.ir", a.get("href", ""))
+        title = a.get_text(" ", strip=True)
+        card = a.find_parent(["article","li","div"])
+        comp = (card.select_one("[class*='company'], .company") or {}).get_text(" ", strip=True) if card else ""
+        loc  = (card.select_one("[class*='location'], .location") or {}).get_text(" ", strip=True) if card else ""
+        meta = " ".join(x.get_text(" ", strip=True) for x in (card.select("span,div,li") if card else []))
+        if not title or not link:
+            continue
+        item = {
+            "title": title,
+            "description": _clip(meta),
+            "link": link,
+            "category": "JOB",
+            "company": comp,
+            "location": loc or "",
+            "extras": {},
+        }
+        out.append(_with_salary_fields(item, f"{title} {comp} {loc} {meta}"))
+    return normalize_items(out)
+
+def scrape_irantalent() -> list[dict]:
+    html = fetch("https://www.irantalent.com/jobs")
+    s = soupify(html)
+    out: list[dict] = []
+    for a in s.select("a[href*='/job/'], a[href*='/jobs/']"):
+        link = urljoin("https://www.irantalent.com", a.get("href", ""))
+        title = a.get_text(" ", strip=True)
+        card = a.find_parent(["article","li","div"])
+        comp = (card.select_one("[class*='company'], .company") or {}).get_text(" ", strip=True) if card else ""
+        loc  = (card.select_one("[class*='location'], .location") or {}).get_text(" ", strip=True) if card else ""
+        meta = " ".join(x.get_text(" ", strip=True) for x in (card.select("span,div,li,small") if card else []))
+        if not title or not link:
+            continue
+        item = {
+            "title": title,
+            "description": _clip(meta),
+            "link": link,
+            "category": "JOB",
+            "company": comp,
+            "location": loc or "",
+            "extras": {},
+        }
+        out.append(_with_salary_fields(item, f"{title} {comp} {loc} {meta}"))
+    return normalize_items(out)
+
+def scrape_karboom() -> list[dict]:
+    html = fetch("https://karboom.io/jobs")
+    s = soupify(html)
+    out: list[dict] = []
+    for a in s.select("a[href^='/jobs/']"):
+        link = urljoin("https://karboom.io", a.get("href", ""))
+        title = a.get_text(" ", strip=True)
+        card = a.find_parent(["article","li","div"])
+        comp = (card.select_one("[class*='company'], .company") or {}).get_text(" ", strip=True) if card else ""
+        loc  = (card.select_one("[class*='location'], .location") or {}).get_text(" ", strip=True) if card else ""
+        meta = " ".join(x.get_text(" ", strip=True) for x in (card.select("span,div,li") if card else []))
+        if not title or not link:
+            continue
+        item = {
+            "title": title,
+            "description": _clip(meta),
+            "link": link,
+            "category": "JOB",
+            "company": comp,
+            "location": loc or "",
+            "extras": {},
+        }
+        out.append(_with_salary_fields(item, f"{title} {comp} {loc} {meta}"))
+    return normalize_items(out)
+
+def scrape_e_estekhdam() -> list[dict]:
+    html = fetch("https://www.e-estekhdam.com/")
+    s = soupify(html)
+    out: list[dict] = []
+    for a in s.select("a[href^='/jobs/'], a[href^='/search/'], a[href^='/k']"):
+        link = urljoin("https://www.e-estekhdam.com", a.get("href", ""))
+        title = a.get_text(" ", strip=True)
+        if not title or not link:
+            continue
+        card = a.find_parent(["article","li","div"])
+        comp = (card.select_one("[class*='company'], .company") or {}).get_text(" ", strip=True) if card else ""
+        loc  = (card.select_one("[class*='location'], .location") or {}).get_text(" ", strip=True) if card else ""
+        meta = " ".join(x.get_text(" ", strip=True) for x in (card.select("span,div,li,small") if card else []))
+        item = {
+            "title": title,
+            "description": _clip(meta),
+            "link": link,
+            "category": "JOB",
+            "company": comp,
+            "location": loc or "",
+            "extras": {},
+        }
+        out.append(_with_salary_fields(item, f"{title} {comp} {loc} {meta}"))
+    return normalize_items(out)
+
+def scrape_quera_jobs() -> list[dict]:
+    html = fetch("https://quera.org/jobs")
+    s = soupify(html)
+    out: list[dict] = []
+    for a in s.select("a[href^='/job/'], a[href^='/jobs/']"):
+        link = urljoin("https://quera.org", a.get("href", ""))
+        title = a.get_text(" ", strip=True)
+        card = a.find_parent(["article","li","div"])
+        comp = (card.select_one("[class*='company'], .company") or {}).get_text(" ", strip=True) if card else ""
+        loc  = (card.select_one("[class*='location'], .location") or {}).get_text(" ", strip=True) if card else ""
+        meta = " ".join(x.get_text(" ", strip=True) for x in (card.select("span,div,li,small") if card else []))
+        if not title or not link:
+            continue
+        item = {
+            "title": title,
+            "description": _clip(meta),
+            "link": link,
+            "category": "JOB",
+            "company": comp,
+            "location": loc or "",
+            "extras": {},
+        }
+        out.append(_with_salary_fields(item, f"{title} {comp} {loc} {meta}"))
+    return normalize_items(out)
+
+# -------------------------------
+# IRANIAN FREELANCE / PROJECT BOARDS (take ALL projects)
+# -------------------------------
+
+def scrape_ponisha() -> list[dict]:
+    # public search list is SSR
+    html = fetch("https://ponisha.ir/search/projects")
+    s = soupify(html)
+    out: list[dict] = []
+    for a in s.select("a[href^='/project/']"):
+        link = urljoin("https://ponisha.ir", a.get("href", ""))
+        title = a.get_text(" ", strip=True)
+        card = a.find_parent(["article","li","div"])
+        budget = (card.select_one("[class*='budget'], .budget") or {}).get_text(" ", strip=True) if card else ""
+        meta = " ".join(x.get_text(" ", strip=True) for x in (card.select("span,div,li,small") if card else []))
+        if not title or not link:
+            continue
+        item = {
+            "title": title,
+            "description": _clip(f"{budget} {meta}"),
+            "link": link,
+            "category": "PROJECT",
+            "company": "",
+            "location": "Online",
+            "extras": {},
+        }
+        out.append(_with_salary_fields(item, f"{title} {budget} {meta}"))
+    return normalize_items(out)
+
+def scrape_parscoders() -> list[dict]:
+    html = fetch("https://parscoders.com/project/list/")
+    s = soupify(html)
+    out: list[dict] = []
+    for a in s.select("a[href^='/project/']"):
+        link = urljoin("https://parscoders.com", a.get("href", ""))
+        title = a.get_text(" ", strip=True)
+        card = a.find_parent(["article","li","div","tr"])
+        budget = (card.select_one("[class*='budget'], .budget, .price") or {}).get_text(" ", strip=True) if card else ""
+        meta = " ".join(x.get_text(" ", strip=True) for x in (card.select("span,div,li,td,small") if card else []))
+        if not title or not link:
+            continue
+        item = {
+            "title": title,
+            "description": _clip(f"{budget} {meta}"),
+            "link": link,
+            "category": "PROJECT",
+            "company": "",
+            "location": "Online",
+            "extras": {},
+        }
+        out.append(_with_salary_fields(item, f"{title} {budget} {meta}"))
+    return normalize_items(out)
+def scrape_himalayas() -> list[dict]:
+    html = fetch("https://himalayas.app/jobs")
+    s = soupify(html)
+    out = []
+    for a in s.select("a[href^='/jobs/']"):
+        link = urljoin("https://himalayas.app", a.get("href", ""))
+        title = a.get_text(" ", strip=True)
+        card = a.find_parent("article") or a.find_parent("div")
+        company = (card.select_one("[data-testid*='company'], .text-gray-500, .text-slate-500") or {}).get_text(" ", strip=True) if card else ""
+        loc = "Remote"
+        meta = " ".join(x.get_text(" ", strip=True) for x in (card.select("span,div,li") if card else []))
+        if not title or not link: 
+            continue
+        if not is_remote_text(f"{title} {meta} remote anywhere"):
+            continue
+        item = {
+            "title": title, "description": _clip(meta), "link": link, "category": "JOB",
+            "company": company, "location": loc, "extras": {}
+        }
+        out.append(_with_salary_fields(item, f"{title} {company} {meta}"))
+    return normalize_items(out)
+
+def scrape_remote_io() -> list[dict]:
+    html = fetch("https://remote.io/remote-jobs")
+    s = soupify(html)
+    out = []
+    for card in s.select("a.job-card"):
+        link = urljoin("https://remote.io", card.get("href",""))
+        title = (card.select_one(".job-title") or {}).get_text(strip=True)
+        company = (card.select_one(".company") or {}).get_text(strip=True)
+        meta = " ".join(x.get_text(" ", strip=True) for x in card.select(".job-tags, .meta, .location"))
+        if not title or not link: 
+            continue
+        if not is_remote_text(f"{title} {meta}"):
+            continue
+        item = {"title": title, "description": _clip(meta), "link": link, "category": "JOB",
+                "company": company, "location": "Remote", "extras": {}}
+        out.append(_with_salary_fields(item, f"{title} {company} {meta}"))
+    return normalize_items(out)
+
+def scrape_skipthedrive() -> list[dict]:
+    html = fetch("https://skipthedrive.com/remote-jobs/")
+    s = soupify(html)
+    out = []
+    for row in s.select("table.jobs-table tbody tr"):
+        a = row.select_one("a")
+        if not a: 
+            continue
+        link = a.get("href","")
+        title = a.get_text(" ", strip=True)
+        company = (row.select_one("td.company") or {}).get_text(" ", strip=True)
+        loc = (row.select_one("td.location") or {}).get_text(" ", strip=True) or "Remote"
+        meta = " ".join(x.get_text(" ", strip=True) for x in row.select("td"))
+        if not is_remote_text(f"{title} {meta} remote"): 
+            continue
+        item = {"title": title, "description": _clip(meta), "link": link, "category": "JOB",
+                "company": company, "location": loc, "extras": {}}
+        out.append(_with_salary_fields(item, meta))
+    return normalize_items(out)
+
+def scrape_jobicy() -> list[dict]:
+    html = fetch("https://jobicy.com/remote-jobs")
+    s = soupify(html)
+    out = []
+    for card in s.select("a.job-card"):
+        link = card.get("href","")
+        title = (card.select_one(".job-title") or {}).get_text(strip=True)
+        company = (card.select_one(".company") or {}).get_text(strip=True)
+        loc = (card.select_one(".job-location") or {}).get_text(strip=True) or "Remote"
+        meta = " ".join(x.get_text(" ", strip=True) for x in card.select(".job-meta, .job-tags"))
+        if not title or not link:
+            continue
+        if not is_remote_text(f"{title} {meta}"):
+            continue
+        item = {"title": title, "description": _clip(meta), "link": link, "category": "JOB",
+                "company": company, "location": loc, "extras": {}}
+        out.append(_with_salary_fields(item, f"{title} {company} {meta}"))
+    return normalize_items(out)
+
+def scrape_remotees() -> list[dict]:
+    html = fetch("https://remotees.com/remote-jobs")
+    s = soupify(html)
+    out = []
+    for row in s.select("table.jobs-table tr"):
+        a = row.select_one("a[href^='/remote-jobs/']")
+        if not a: 
+            continue
+        link = urljoin("https://remotees.com", a.get("href",""))
+        title = a.get_text(" ", strip=True)
+        company = (row.select_one("td.company") or {}).get_text(" ", strip=True)
+        meta = " ".join(x.get_text(' ', strip=True) for x in row.select("td"))
+        if not is_remote_text(f"{title} {meta}"): 
+            continue
+        item = {"title": title, "description": _clip(meta), "link": link, "category": "JOB",
+                "company": company, "location": "Remote", "extras": {}}
+        out.append(_with_salary_fields(item, meta))
+    return normalize_items(out)
+
+def scrape_remotely_jobs() -> list[dict]:
+    html = fetch("https://remotely.jobs/")
+    s = soupify(html)
+    out = []
+    for card in s.select("a[href^='/remote/']"):
+        link = urljoin("https://remotely.jobs", card.get("href",""))
+        title = (card.select_one("h3, .job-title") or {}).get_text(strip=True)
+        company = (card.select_one(".company") or {}).get_text(strip=True)
+        meta = " ".join(x.get_text(" ", strip=True) for x in card.select("span,div"))
+        if not title or not link:
+            continue
+        if not is_remote_text(f"{title} {meta}"): 
+            continue
+        item = {"title": title, "description": _clip(meta), "link": link, "category": "JOB",
+                "company": company, "location": "Remote", "extras": {}}
+        out.append(_with_salary_fields(item, meta))
+    return normalize_items(out)
+
+def scrape_weremoto() -> list[dict]:
+    html = fetch("https://weremoto.com/remote-jobs")
+    s = soupify(html)
+    out = []
+    for card in s.select("a[href^='/remote-jobs/']"):
+        link = urljoin("https://weremoto.com", card.get("href",""))
+        title = (card.select_one(".job-card__title, h3") or {}).get_text(strip=True)
+        company = (card.select_one(".job-card__company") or {}).get_text(strip=True)
+        meta = " ".join(x.get_text(" ", strip=True) for x in card.select(".job-card__meta, .job-card__tags, span, div"))
+        if not title or not link:
+            continue
+        if not is_remote_text(f"{title} {meta}"):
+            continue
+        item = {"title": title, "description": _clip(meta), "link": link, "category": "JOB",
+                "company": company, "location": "Remote", "extras": {}}
+        out.append(_with_salary_fields(item, meta))
+    return normalize_items(out)
+
+def scrape_remote_tech_jobs() -> list[dict]:
+    html = fetch("https://remotetechjobs.com/")
+    s = soupify(html)
+    out = []
+    for job in s.select("a.job"):
+        link = urljoin("https://remotetechjobs.com", job.get("href",""))
+        title = (job.select_one(".title") or {}).get_text(strip=True)
+        company = (job.select_one(".company") or {}).get_text(strip=True)
+        loc = (job.select_one(".location") or {}).get_text(strip=True) or "Remote"
+        meta = " ".join(x.get_text(" ", strip=True) for x in job.select(".tags, .meta"))
+        if not title or not link:
+            continue
+        if not is_remote_text(f"{title} {meta}"):
+            continue
+        item = {"title": title, "description": _clip(meta), "link": link, "category": "JOB",
+                "company": company, "location": loc, "extras": {}}
+        out.append(_with_salary_fields(item, meta))
+    return normalize_items(out)
+
+def scrape_powertofly() -> list[dict]:
+    html = fetch("https://powertofly.com/jobs?location=Remote")
+    s = soupify(html)
+    out = []
+    for a in s.select("a[href^='/jobs/']"):
+        link = urljoin("https://powertofly.com", a.get("href",""))
+        title = a.get_text(" ", strip=True)
+        card = a.find_parent("article") or a.find_parent("div")
+        company = (card.select_one("[class*='company'], .company") or {}).get_text(" ", strip=True) if card else ""
+        meta = " ".join(x.get_text(" ", strip=True) for x in (card.select("span,div,li") if card else []))
+        if not title or not link:
+            continue
+        if not is_remote_text(f"{title} {meta}"):
+            continue
+        item = {"title": title, "description": _clip(meta), "link": link, "category": "JOB",
+                "company": company, "location": "Remote", "extras": {}}
+        out.append(_with_salary_fields(item, meta))
+    return normalize_items(out)
+
+def scrape_freshremote() -> list[dict]:
+    html = fetch("https://freshremote.work/")
+    s = soupify(html)
+    out = []
+    for card in s.select("a.card, a[href^='/remote-jobs/']"):
+        link = urljoin("https://freshremote.work", card.get("href",""))
+        title = (card.select_one("h2, h3, .title") or {}).get_text(strip=True)
+        company = (card.select_one(".company") or {}).get_text(strip=True)
+        tags = " ".join(x.get_text(" ", strip=True) for x in card.select(".tags, .tag, .meta"))
+        if not title or not link:
+            continue
+        if not is_remote_text(f"{title} {tags}"):
+            continue
+        item = {"title": title, "description": _clip(tags), "link": link, "category": "JOB",
+                "company": company, "location": "Remote", "extras": {}}
+        out.append(_with_salary_fields(item, tags))
+    return normalize_items(out)
+
+def scrape_authentic_jobs() -> list[dict]:
+    html = fetch("https://www.authenticjobs.com/?location=remote")
+    s = soupify(html)
+    out = []
+    for card in s.select("a[href*='/job/']"):
+        link = card.get("href","")
+        title = (card.select_one("h3, .job-title") or {}).get_text(strip=True)
+        company = (card.select_one(".company") or {}).get_text(strip=True)
+        meta = " ".join(x.get_text(" ", strip=True) for x in card.select("span,div,li"))
+        if not title or not link:
+            continue
+        if not is_remote_text(f"{title} {meta}"):
+            continue
+        item = {"title": title, "description": _clip(meta), "link": link, "category": "JOB",
+                "company": company, "location": "Remote", "extras": {}}
+        out.append(_with_salary_fields(item, meta))
+    return normalize_items(out)
+
+def scrape_nofluffjobs() -> list[dict]:
+    html = fetch("https://nofluffjobs.com/remote")
+    s = soupify(html)
+    out = []
+    for a in s.select("a[href^='/job/']"):
+        link = urljoin("https://nofluffjobs.com", a.get("href",""))
+        title = a.get_text(" ", strip=True)
+        card = a.find_parent("article") or a.find_parent("div")
+        company = (card.select_one("[data-testid*='company'], .posting-company") or {}).get_text(" ", strip=True) if card else ""
+        loc = "Remote"
+        meta = " ".join(x.get_text(" ", strip=True) for x in (card.select("span,div,li") if card else []))
+        if not title or not link:
+            continue
+        if not is_remote_text(f"{title} {meta}"):
+            continue
+        item = {"title": title, "description": _clip(meta), "link": link, "category": "JOB",
+                "company": company, "location": loc, "extras": {}}
+        out.append(_with_salary_fields(item, meta))
+    return normalize_items(out)
+
+def scrape_the_hub() -> list[dict]:
+    html = fetch("https://thehub.io/jobs?location=remote")
+    s = soupify(html)
+    out = []
+    for a in s.select("a[href^='/jobs/']"):
+        link = urljoin("https://thehub.io", a.get("href",""))
+        title = a.get_text(" ", strip=True)
+        card = a.find_parent("article") or a.find_parent("div")
+        company = (card.select_one("[class*='company'], .job-company") or {}).get_text(" ", strip=True) if card else ""
+        meta = " ".join(x.get_text(" ", strip=True) for x in (card.select("span,div,li") if card else []))
+        if not title or not link:
+            continue
+        if not is_remote_text(f"{title} {meta}"):
+            continue
+        item = {"title": title, "description": _clip(meta), "link": link, "category": "JOB",
+                "company": company, "location": "Remote", "extras": {}}
+        out.append(_with_salary_fields(item, meta))
+    return normalize_items(out)
+def scrape_freelancer_com() -> list[dict]:
+    html = fetch("https://www.freelancer.com/jobs/")
+    s = soupify(html)
+    out = []
+    for a in s.select("a.JobSearchCard-primary-heading-link"):
+        link = urljoin("https://www.freelancer.com", a.get("href",""))
+        title = a.get_text(" ", strip=True)
+        card = a.find_parent("div", class_="JobSearchCard-item")
+        desc = (card.select_one(".JobSearchCard-primary-description") or {}).get_text(" ", strip=True) if card else ""
+        budget = (card.select_one(".JobSearchCard-secondary-price") or {}).get_text(" ", strip=True) if card else ""
+        meta = f"{budget} {desc}"
+        if not title or not link:
+            continue
+        item = {"title": title, "description": _clip(meta), "link": link, "category": "PROJECT",
+                "company": "", "location": "Online", "extras": {}}
+        out.append(_with_salary_fields(item, meta))
+    return normalize_items(out)
+
+def scrape_peopleperhour() -> list[dict]:
+    html = fetch("https://www.peopleperhour.com/freelance-jobs")
+    s = soupify(html)
+    out = []
+    for a in s.select("a[href*='/job/']"):
+        link = urljoin("https://www.peopleperhour.com", a.get("href",""))
+        title = a.get_text(" ", strip=True)
+        card = a.find_parent(["article","li","div"])
+        budget = (card.select_one(".budget, [class*='budget']") or {}).get_text(" ", strip=True) if card else ""
+        desc = " ".join(x.get_text(" ", strip=True) for x in (card.select("p, span, div") if card else []))
+        if not title or not link:
+            continue
+        item = {"title": title, "description": _clip(f"{budget} {desc}"), "link": link, "category": "PROJECT",
+                "company": "", "location": "Online", "extras": {}}
+        out.append(_with_salary_fields(item, f"{budget} {desc}"))
+    return normalize_items(out)
+
+def scrape_guru() -> list[dict]:
+    html = fetch("https://www.guru.com/work/")
+    s = soupify(html)
+    out = []
+    for a in s.select("a[href*='/work/detail/']"):
+        link = urljoin("https://www.guru.com", a.get("href",""))
+        title = a.get_text(" ", strip=True)
+        card = a.find_parent("div")
+        budget = (card.select_one(".prj-bid-amt, .price, .budget") or {}).get_text(" ", strip=True) if card else ""
+        desc = " ".join(x.get_text(" ", strip=True) for x in (card.select("p, span, div") if card else []))
+        if not title or not link:
+            continue
+        item = {"title": title, "description": _clip(f"{budget} {desc}"), "link": link, "category": "PROJECT",
+                "company": "", "location": "Online", "extras": {}}
+        out.append(_with_salary_fields(item, f"{budget} {desc}"))
+    return normalize_items(out)
+
+def scrape_contra() -> list[dict]:
+    html = fetch("https://contra.com/jobs")
+    s = soupify(html)
+    out = []
+    for a in s.select("a[href^='/jobs/']"):
+        link = urljoin("https://contra.com", a.get("href",""))
+        title = a.get_text(" ", strip=True)
+        card = a.find_parent("article") or a.find_parent("div")
+        meta = " ".join(x.get_text(" ", strip=True) for x in (card.select("span,div,li") if card else []))
+        if not title or not link:
+            continue
+        item = {"title": title, "description": _clip(meta), "link": link, "category": "PROJECT",
+                "company": "", "location": "Online", "extras": {}}
+        out.append(_with_salary_fields(item, meta))
+    return normalize_items(out)
+
+def scrape_braintrust() -> list[dict]:
+    html = fetch("https://www.usebraintrust.com/jobs")
+    s = soupify(html)
+    out = []
+    for a in s.select("a[href^='/jobs/']"):
+        link = urljoin("https://www.usebraintrust.com", a.get("href",""))
+        title = a.get_text(" ", strip=True)
+        card = a.find_parent("article") or a.find_parent("div")
+        meta = " ".join(x.get_text(" ", strip=True) for x in (card.select("span,div,li") if card else []))
+        if not title or not link:
+            continue
+        item = {"title": title, "description": _clip(meta), "link": link, "category": "PROJECT",
+                "company": "", "location": "Online", "extras": {}}
+        out.append(_with_salary_fields(item, meta))
+    return normalize_items(out)
+
+def scrape_gunio() -> list[dict]:
+    html = fetch("https://gun.io/jobs")
+    s = soupify(html)
+    out = []
+    for a in s.select("a[href^='/jobs/']"):
+        link = urljoin("https://gun.io", a.get("href",""))
+        title = a.get_text(" ", strip=True)
+        card = a.find_parent("article") or a.find_parent("div")
+        meta = " ".join(x.get_text(" ", strip=True) for x in (card.select("span,div,li") if card else []))
+        if not title or not link:
+            continue
+        item = {"title": title, "description": _clip(meta), "link": link, "category": "PROJECT",
+                "company": "", "location": "Online", "extras": {}}
+        out.append(_with_salary_fields(item, meta))
+    return normalize_items(out)
+
+def scrape_flexiple() -> list[dict]:
+    html = fetch("https://flexiple.com/freelance-jobs/")
+    s = soupify(html)
+    out = []
+    for a in s.select("a[href*='/freelance-jobs/']"):
+        link = urljoin("https://flexiple.com", a.get("href",""))
+        title = a.get_text(" ", strip=True)
+        desc = " ".join(x.get_text(" ", strip=True) for x in (a.find_parent("article") or a.find_parent("div") or s).select("span,div,li"))
+        if not title or not link:
+            continue
+        item = {"title": title, "description": _clip(desc), "link": link, "category": "PROJECT",
+                "company": "", "location": "Online", "extras": {}}
+        out.append(_with_salary_fields(item, desc))
+    return normalize_items(out)
+
+def scrape_topcoder() -> list[dict]:
+    html = fetch("https://www.topcoder.com/challenges")
+    s = soupify(html)
+    out = []
+    for a in s.select("a[href^='/challenges/']"):
+        link = urljoin("https://www.topcoder.com", a.get("href",""))
+        title = a.get_text(" ", strip=True)
+        desc = " ".join(x.get_text(" ", strip=True) for x in (a.find_parent("article") or a.find_parent("div") or s).select("span,div,li"))
+        if not title or not link:
+            continue
+        item = {"title": title, "description": _clip(desc), "link": link, "category": "PROJECT",
+                "company": "", "location": "Online", "extras": {}}
+        out.append(_with_salary_fields(item, desc))
+    return normalize_items(out)
+
+def scrape_dribbble_jobs() -> list[dict]:
+    html = fetch("https://dribbble.com/jobs?location=remote")
+    s = soupify(html)
+    out = []
+    for a in s.select("a[href^='/jobs/']"):
+        link = urljoin("https://dribbble.com", a.get("href",""))
+        title = a.get_text(" ", strip=True)
+        meta = " ".join(x.get_text(" ", strip=True) for x in (a.find_parent("li") or a.find_parent("div") or s).select("span,div,li"))
+        if not title or not link:
+            continue
+        item = {"title": title, "description": _clip(meta), "link": link, "category": "PROJECT",
+                "company": "", "location": "Remote", "extras": {}}
+        out.append(_with_salary_fields(item, meta))
+    return normalize_items(out)
+
+def scrape_behance_jobs() -> list[dict]:
+    html = fetch("https://www.behance.net/joblist?location=remote")
+    s = soupify(html)
+    out = []
+    for a in s.select("a[href*='/job/']"):
+        link = urljoin("https://www.behance.net", a.get("href",""))
+        title = a.get_text(" ", strip=True)
+        meta = " ".join(x.get_text(" ", strip=True) for x in (a.find_parent("li") or a.find_parent("div") or s).select("span,div,li"))
+        if not title or not link:
+            continue
+        item = {"title": title, "description": _clip(meta), "link": link, "category": "PROJECT",
+                "company": "", "location": "Remote", "extras": {}}
+        out.append(_with_salary_fields(item, meta))
+    return normalize_items(out)
+
+def scrape_twine() -> list[dict]:
+    html = fetch("https://www.twine.net/jobs")
+    s = soupify(html)
+    out = []
+    for a in s.select("a[href^='/jobs/']"):
+        link = urljoin("https://www.twine.net", a.get("href",""))
+        title = a.get_text(" ", strip=True)
+        meta = " ".join(x.get_text(" ", strip=True) for x in (a.find_parent("article") or a.find_parent("div") or s).select("span,div,li"))
+        if not title or not link:
+            continue
+        item = {"title": title, "description": _clip(meta), "link": link, "category": "PROJECT",
+                "company": "", "location": "Online", "extras": {}}
+        out.append(_with_salary_fields(item, meta))
+    return normalize_items(out)
+
+def scrape_workana() -> list[dict]:
+    html = fetch("https://www.workana.com/en/jobs")
+    s = soupify(html)
+    out = []
+    for a in s.select("a[href*='/job/'], a[href*='/project/']"):
+        link = urljoin("https://www.workana.com", a.get("href",""))
+        title = a.get_text(" ", strip=True)
+        meta = " ".join(x.get_text(" ", strip=True) for x in (a.find_parent("article") or a.find_parent("div") or s).select("span,div,li"))
+        if not title or not link:
+            continue
+        item = {"title": title, "description": _clip(meta), "link": link, "category": "PROJECT",
+                "company": "", "location": "Online", "extras": {}}
+        out.append(_with_salary_fields(item, meta))
+    return normalize_items(out)
+
+def scrape_freelancermap() -> list[dict]:
+    html = fetch("https://www.freelancermap.com/it-projects")
+    s = soupify(html)
+    out = []
+    for a in s.select("a[href^='/project/']"):
+        link = urljoin("https://www.freelancermap.com", a.get("href",""))
+        title = a.get_text(" ", strip=True)
+        meta = " ".join(x.get_text(" ", strip=True) for x in (a.find_parent("article") or a.find_parent("div") or s).select("span,div,li"))
+        if not title or not link:
+            continue
+        item = {"title": title, "description": _clip(meta), "link": link, "category": "PROJECT",
+                "company": "", "location": "Online", "extras": {}}
+        out.append(_with_salary_fields(item, meta))
+    return normalize_items(out)
+
+def scrape_truelancer() -> list[dict]:
+    html = fetch("https://www.truelancer.com/freelance-jobs")
+    s = soupify(html)
+    out = []
+    for a in s.select("a[href^='/project/details/']"):
+        link = urljoin("https://www.truelancer.com", a.get("href",""))
+        title = a.get_text(" ", strip=True)
+        card = a.find_parent("div")
+        budget = (card.select_one(".budget, .amount") or {}).get_text(" ", strip=True) if card else ""
+        desc = " ".join(x.get_text(" ", strip=True) for x in (card.select("p, span, div") if card else []))
+        if not title or not link:
+            continue
+        item = {"title": title, "description": _clip(f"{budget} {desc}"), "link": link, "category": "PROJECT",
+                "company": "", "location": "Online", "extras": {}}
+        out.append(_with_salary_fields(item, f"{budget} {desc}"))
+    return normalize_items(out)
+def scrape_taikai() -> list[dict]:
+    html = fetch("https://taikai.network/hackathons")
+    s = soupify(html)
+    out = []
+    for a in s.select("a[href^='/hackathons/']"):
+        link = urljoin("https://taikai.network", a.get("href",""))
+        title = a.get_text(" ", strip=True)
+        info = " ".join(x.get_text(" ", strip=True) for x in (a.find_parent("article") or a.find_parent("div") or s).select("span,div,li"))
+        item = {"title": title, "description": _clip(info), "link": link, "category": "PROJECT",
+                "company": "", "location": "Online", "extras": {}}
+        out.append(item)
+    return normalize_items(out)
+
+def scrape_mlh() -> list[dict]:
+    html = fetch("https://mlh.io/seasons")
+    s = soupify(html)
+    out = []
+    for a in s.select("a[href*='/seasons/']"):
+        link = urljoin("https://mlh.io", a.get("href",""))
+        title = a.get_text(" ", strip=True)
+        info = " ".join(x.get_text(" ", strip=True) for x in (a.find_parent("article") or a.find_parent("div") or s).select("span,div,li"))
+        item = {"title": title, "description": _clip(info), "link": link, "category": "PROJECT",
+                "company": "", "location": "Online", "extras": {}}
+        out.append(item)
+    return normalize_items(out)
+
+def scrape_itch_io_jams() -> list[dict]:
+    html = fetch("https://itch.io/jams")
+    s = soupify(html)
+    out = []
+    for a in s.select("a.jam_title, a[href^='/jam/']"):
+        link = urljoin("https://itch.io", a.get("href",""))
+        title = a.get_text(" ", strip=True)
+        info = " ".join(x.get_text(" ", strip=True) for x in (a.find_parent("div") or s).select("span,div,li"))
+        item = {"title": title, "description": _clip(info), "link": link, "category": "PROJECT",
+                "company": "", "location": "Online", "extras": {}}
+        out.append(item)
+    return normalize_items(out)
+
+def scrape_codalab() -> list[dict]:
+    html = fetch("https://codalab.lisn.upsaclay.fr/competitions/")
+    s = soupify(html)
+    out = []
+    for a in s.select("a[href*='/competitions/']"):
+        link = urljoin("https://codalab.lisn.upsaclay.fr", a.get("href",""))
+        title = a.get_text(" ", strip=True)
+        info = " ".join(x.get_text(" ", strip=True) for x in (a.find_parent("tr") or a.find_parent("div") or s).select("td, span, div"))
+        item = {"title": title, "description": _clip(info), "link": link, "category": "PROJECT",
+                "company": "", "location": "Online", "extras": {}}
+        out.append(item)
+    return normalize_items(out)
+
+def scrape_product_hunt() -> list[dict]:
+    # Project discovery (not strictly jobs) – still valuable for new projects/opportunities
+    html = fetch("https://www.producthunt.com/posts")
+    s = soupify(html)
+    out = []
+    for a in s.select("a[href^='/posts/']"):
+        link = urljoin("https://www.producthunt.com", a.get("href",""))
+        title = a.get_text(" ", strip=True)
+        info = " ".join(x.get_text(" ", strip=True) for x in (a.find_parent("article") or a.find_parent("div") or s).select("span,div"))
+        if not title or not link:
+            continue
+        item = {"title": title, "description": _clip(info), "link": link, "category": "PROJECT",
+                "company": "", "location": "Online", "extras": {}}
+        out.append(item)
+    return normalize_items(out)
+def scrape_kaggle() -> list[dict]:
+    html = fetch("https://www.kaggle.com/competitions")
+    s = soupify(html)
+    out = []
+    for a in s.select("a[href^='/competitions/']"):
+        link = urljoin("https://www.kaggle.com", a.get("href",""))
+        title = a.get_text(" ", strip=True)
+        row = a.find_parent("div")
+        info = " ".join(x.get_text(" ", strip=True) for x in (row.select("span,div") if row else []))
+        item = {"title": title, "description": _clip(info), "link": link, "category": "COMPETITION",
+                "company": "", "location": "Online", "extras": {}}
+        out.append(item)
+    return normalize_items(out)
+
+def scrape_gitcoin() -> list[dict]:
+    # Gitcoin explorer is mostly dynamic; fetch will often return limited SSR.
+    html = fetch("https://gitcoin.co/grants/explorer")
+    s = soupify(html)
+    out = []
+    for a in s.select("a[href*='/grants/']"):
+        link = urljoin("https://gitcoin.co", a.get("href",""))
+        title = a.get_text(" ", strip=True)
+        info = " ".join(x.get_text(" ", strip=True) for x in (a.find_parent("article") or a.find_parent("div") or s).select("span,div,li"))
+        if not title or not link:
+            continue
+        item = {"title": title, "description": _clip(info), "link": link, "category": "PROJECT",
+                "company": "", "location": "Online", "extras": {}}
+        out.append(item)
+    return normalize_items(out)
+
+# Sites that are mostly marketing/auth-only; return [] safely (parser exists, no crash)
+def scrape_upwork() -> list[dict]: return []
+def scrape_fiverr() -> list[dict]: return []
+def scrape_toptal() -> list[dict]: return []
+def scrape_lemons() -> list[dict]: return []
+def scrape_malt() -> list[dict]: return []
+def scrape_99designs() -> list[dict]: return []
 
 def scrape_kaggle_placeholder() -> List[Dict]:
     return []
