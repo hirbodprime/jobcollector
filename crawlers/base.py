@@ -1,22 +1,26 @@
-# crawlers/base.py
-import re
-import requests
-from typing import List, Dict, Tuple, Optional
-from bs4 import BeautifulSoup
-# crawlers/base.py
+# -*- coding: utf-8 -*-
 from __future__ import annotations
-import os, time, random, json
-from typing import Callable, Any
+
+import os
+import re
+import time
+import random
+import json
+from typing import List, Dict, Tuple, Optional, Callable, Any
+from urllib.parse import urljoin, urlparse
+
 import requests
 from bs4 import BeautifulSoup
 
-# --- Optional Cloudflare client
+# --- Optional Cloudflare client (pip install cloudscraper)
 try:
-    import cloudscraper  # pip install cloudscraper
+    import cloudscraper  # type: ignore
 except Exception:
     cloudscraper = None
-# -------------------- Remote filter --------------------
 
+# =========================================================
+# Remote text detector (EN + FA)
+# =========================================================
 REMOTE_PATTERNS = re.compile(
     r"(?:\b(?:remote|anywhere|work[\s-]?from[\s-]?home|wfh|online|virtual)\b|"
     r"ریموت|دورکاری|کار\s*از\s*راه\s*دور)",
@@ -26,24 +30,51 @@ REMOTE_PATTERNS = re.compile(
 def is_remote_text(text: str) -> bool:
     return bool(REMOTE_PATTERNS.search(text or ""))
 
+# =========================================================
+# HTTP fetch (robust)
+# =========================================================
 
+# Tunables via env (with safe defaults)
+SCRAPER_TIMEOUT = int(os.getenv("SCRAPER_TIMEOUT", "25"))
+SCRAPER_RETRIES = int(os.getenv("SCRAPER_RETRIES", "3"))
+SCRAPER_SLEEP_BASE = float(os.getenv("SCRAPER_SLEEP_BASE", "1.0"))
+SCRAPER_MIN_LEN = int(os.getenv("SCRAPER_MIN_LEN", "200"))
+SCRAPER_DEBUG = os.getenv("SCRAPER_DEBUG", "0") == "1"
+
+# Rotating desktop UA pool
+_UA_POOL = [
+    # Recent Chrome on Windows/Mac/Linux
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 13_6) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+    # Firefox
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 13.6; rv:121.0) Gecko/20100101 Firefox/121.0",
+]
 
 DEFAULT_HEADERS = {
-    "User-Agent": (
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-        "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/123.0 Safari/537.36"
-    ),
-    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "User-Agent": random.choice(_UA_POOL),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,application/json;q=0.8,*/*;q=0.7",
     "Accept-Language": "en-US,en;q=0.9",
     "Cache-Control": "no-cache",
     "Pragma": "no-cache",
+    "Connection": "keep-alive",
 }
 
-def _session():
-    # Optional proxy via env: HTTP_PROXY/HTTPS_PROXY
+RETRY_STATUS = {401, 403, 404, 408, 409, 425, 429, 500, 502, 503, 504, 520, 521, 522, 523, 524}
+BLOCKPAGE_RE = re.compile(
+    r"(just a moment|cloudflare|cf-[-\w]*-ray|attention required|access denied|"
+    r"request rejected|verify you are a human|bot detection)",
+    re.I,
+)
+
+def _new_session() -> requests.Session:
     s = requests.Session()
     s.headers.update(DEFAULT_HEADERS.copy())
+    # Honor HTTP(S)_PROXY, NO_PROXY, REQUESTS_CA_BUNDLE from env automatically (requests does this)
     return s
 
 def _maybe_cloudflare():
@@ -51,53 +82,116 @@ def _maybe_cloudflare():
         return None
     return cloudscraper.create_scraper() if cloudscraper else None
 
-def _do_get(sess, url, timeout):
-    return sess.get(url, timeout=timeout)
+def _looks_like_blockpage(text: str) -> bool:
+    if not text or len(text) < 64:
+        return True  # suspiciously tiny
+    return bool(BLOCKPAGE_RE.search(text))
 
-def fetch(url: str, *, timeout: int = 25, retries: int = 3, sleep_base: float = 1.0, headers: dict | None = None) -> str:
+def _origin_referer(url: str) -> str:
+    p = urlparse(url)
+    return f"{p.scheme}://{p.netloc}/"
+
+def fetch(
+    url: str,
+    *,
+    timeout: int | None = None,
+    retries: int | None = None,
+    sleep_base: float | None = None,
+    headers: dict | None = None,
+    allow_blockpage: bool = False,
+) -> str:
     """
-    Robust HTML/text fetch with retries, exponential backoff, and optional Cloudflare bypass.
-    Never returns empty string for a 200 response (basic sanity check).
-    Raises RuntimeError only after exhausting retries.
+    Fetch text with retries, exponential backoff + jitter, rotating UA, and
+    optional Cloudflare bypass. Raises RuntimeError only after exhausting retries.
+
+    Env toggles:
+      SCRAPER_TIMEOUT, SCRAPER_RETRIES, SCRAPER_SLEEP_BASE, SCRAPER_MIN_LEN, SCRAPER_DEBUG
+      DISABLE_CLOUDSCRAPER=1  -> disables cloudscraper fallback
     """
-    hdrs = DEFAULT_HEADERS.copy()
-    if headers:
-        hdrs.update(headers)
+    t_out = timeout or SCRAPER_TIMEOUT
+    n_try = retries or SCRAPER_RETRIES
+    s_base = sleep_base or SCRAPER_SLEEP_BASE
 
-    sess = _session()
-    sess.headers.update(hdrs)
-
+    sess = _new_session()
     cf = _maybe_cloudflare()
 
-    last_status, last_err = None, None
-    for i in range(retries):
+    # Merge headers and set dynamic Referer + randomized UA each call
+    hdrs = DEFAULT_HEADERS.copy()
+    hdrs["User-Agent"] = random.choice(_UA_POOL)
+    hdrs["Referer"] = _origin_referer(url)
+    if headers:
+        hdrs.update(headers)
+    sess.headers.update(hdrs)
+
+    last_status, last_err, last_text = None, None, ""
+
+    for i in range(max(1, n_try)):
+        # Change UA each attempt to reduce sticky blocking
+        sess.headers["User-Agent"] = random.choice(_UA_POOL)
+        if SCRAPER_DEBUG:
+            print(f"[fetch] try={i+1}/{n_try} GET {url}")
+
         try:
-            r = _do_get(sess, url, timeout)
+            r = sess.get(url, timeout=t_out, allow_redirects=True)
             last_status = r.status_code
-            if r.status_code == 200 and r.text and len(r.text) > 200:
-                return r.text
-            if r.status_code in (403, 429, 503) and cf is not None:
-                r2 = cf.get(url, timeout=timeout, headers=hdrs)
-                last_status = r2.status_code
-                if r2.status_code == 200 and r2.text and len(r2.text) > 200:
-                    return r2.text
+            last_text = r.text or ""
+
+            if r.status_code == 200 and len(last_text) >= SCRAPER_MIN_LEN:
+                if allow_blockpage or not _looks_like_blockpage(last_text):
+                    return last_text
+
+            # Fallbacks for protected sites or API responses
+            if (r.status_code in RETRY_STATUS or len(last_text) < SCRAPER_MIN_LEN or _looks_like_blockpage(last_text)):
+                # If JSON API, sometimes setting explicit Accept helps
+                if "application/json" in (r.headers.get("Content-Type", "").lower()):
+                    pass  # already JSONy
+                else:
+                    # Try with explicit JSON Accept
+                    try:
+                        r2 = sess.get(url, timeout=t_out, headers={**hdrs, "Accept": "application/json,*/*;q=0.8"})
+                        last_status = r2.status_code
+                        last_text = r2.text or last_text
+                        if r2.status_code == 200 and len(last_text) >= SCRAPER_MIN_LEN and not _looks_like_blockpage(last_text):
+                            return last_text
+                    except Exception as _e2:
+                        last_err = _e2
+
+                # Cloudflare / WAF fallback
+                if cf is not None:
+                    try:
+                        r3 = cf.get(url, timeout=t_out, headers=hdrs, allow_redirects=True)
+                        last_status = r3.status_code
+                        last_text = r3.text or last_text
+                        if r3.status_code == 200 and len(last_text) >= SCRAPER_MIN_LEN:
+                            if allow_blockpage or not _looks_like_blockpage(last_text):
+                                return last_text
+                    except Exception as _e3:
+                        last_err = _e3
+
         except Exception as e:
             last_err = e
+
         # backoff + jitter
-        time.sleep(sleep_base * (2 ** i) + random.random())
+        time.sleep(s_base * (2 ** i) + random.random() * 0.75)
+
     raise RuntimeError(f"fetch({url}) failed: status={last_status} err={last_err}")
 
 def fetch_json(url: str, **kw) -> Any:
-    txt = fetch(url, **kw)
-    return json.loads(txt)
+    txt = fetch(url, headers={"Accept": "application/json, */*;q=0.8"}, **kw)
+    try:
+        return json.loads(txt)
+    except Exception:
+        # Some APIs wrap JSON in HTML; attempt to strip tags crudely
+        clean = BeautifulSoup(txt, "lxml").get_text(" ", strip=True)
+        return json.loads(clean)
 
 def soupify(html: str) -> BeautifulSoup:
-    return BeautifulSoup(html, "lxml")
+    return BeautifulSoup(html or "", "lxml")
 
 def parse_rss(xml_text: str) -> list[dict]:
-    soup = BeautifulSoup(xml_text, "xml")
-    items = []
-    entries = soup.find_all("item") or soup.find_all("entry")
+    soup = BeautifulSoup(xml_text or "", "xml")
+    items: list[dict] = []
+    entries = soup.find_all("item") or soup.find_all("entry") or []
     for e in entries:
         def _find(*names):
             for n in names:
@@ -105,26 +199,41 @@ def parse_rss(xml_text: str) -> list[dict]:
                 if tag:
                     return tag
             return None
-        title = (_find("title").get_text(strip=True) if _find("title") else "")
+
+        ttag = _find("title")
+        title = ttag.get_text(strip=True) if ttag else ""
+
         link = ""
-        tag_link = _find("link")
-        if tag_link:
-            if tag_link.has_attr("href"):  # Atom
-                link = tag_link["href"]
+        ltag = _find("link")
+        if ltag:
+            if ltag.has_attr("href"):  # Atom
+                link = ltag["href"]
             else:  # RSS
-                link = tag_link.get_text(strip=True)
-        if not link and _find("guid"):
-            link = _find("guid").get_text(strip=True)
-        desc_tag = _find("description", "content", "summary")
-        description = desc_tag.get_text(" ", strip=True) if desc_tag else ""
-        pub = (_find("pubDate", "updated", "published").get_text(strip=True)
-               if _find("pubDate", "updated", "published") else "")
+                link = ltag.get_text(strip=True)
+        if not link:
+            gtag = _find("guid")
+            link = gtag.get_text(strip=True) if gtag else ""
+
+        dtag = _find("description", "content", "summary")
+        description = dtag.get_text(" ", strip=True) if dtag else ""
+
+        ptag = _find("pubDate", "updated", "published")
+        published = ptag.get_text(strip=True) if ptag else ""
+
         if title and link:
-            items.append({"title": title, "link": link, "description": description, "published": pub})
+            items.append({
+                "title": title,
+                "link": link,
+                "description": description,
+                "published": published
+            })
     return items
 
-# ---- Safe text helpers used by scrapers
-def txt(node, sep=" ", strip=True) -> str:
+# =========================================================
+# Safe text helpers used by scrapers
+# =========================================================
+
+def txt(node, sep: str = " ", strip: bool = True) -> str:
     try:
         return node.get_text(sep=sep, strip=strip)
     except Exception:
@@ -138,10 +247,9 @@ def attr(node, name: str, default: str = "") -> str:
         return default
 
 def abs_url(base: str, href: str) -> str:
-    from urllib.parse import urljoin
     return urljoin(base, href or "")
 
-# ---- Non-crashing wrapper for scrapers
+# Non-crashing wrapper for scrapers (use as decorator @no_fail)
 def no_fail(fn: Callable[..., list[dict]]) -> Callable[..., list[dict]]:
     def wrapper(*a, **kw) -> list[dict]:
         try:
@@ -151,20 +259,14 @@ def no_fail(fn: Callable[..., list[dict]]) -> Callable[..., list[dict]]:
             return []
     return wrapper
 
-def soupify(html: str) -> BeautifulSoup:
-    return BeautifulSoup(html, "lxml")
+# =========================================================
+# Salary parsing (robust)
+# =========================================================
 
-
-
-
-# -------------------- Salary parsing (robust) --------------------
-
-# Tokens (no duplicate named groups)
 AMOUNT_TOKEN = r"\d+(?:[.,]\d{3})*(?:[.,]\d+)?\s*[kKmM]?"
-CURRENCY_TOKEN = r"(?:USD|EUR|GBP|CAD|AUD|CHF|JPY|\$|€|£)"
+CURRENCY_TOKEN = r"(?:USD|EUR|GBP|CAD|AUD|CHF|JPY|SEK|NOK|DKK|INR|₮|₽|\$|€|£)"
 PERIOD_TOKEN = r"(?:per\s+(?:year|month|hour|day)|/year|/month|/hour|yr|year|annum|mo|month|hr|hour|day)"
 
-# Example matches: "$80–120k", "€50/hour", "65k per year", "USD 120000 yr"
 SALARY_RE = re.compile(
     rf"(?P<cur1>{CURRENCY_TOKEN})?\s*(?P<min>{AMOUNT_TOKEN})"
     rf"(?:\s*[-–]\s*(?P<cur2>{CURRENCY_TOKEN})?\s*(?P<max>{AMOUNT_TOKEN}))?"
@@ -213,7 +315,9 @@ def parse_salary(text: str) -> Tuple[Optional[float], Optional[float], str, str]
     per = _period_to_enum(m.group("per") or "")
     return mn, mx, cur, per
 
-# -------------------- Normalization --------------------
+# =========================================================
+# Normalization for DB insert
+# =========================================================
 
 def normalize_items(items: List[Dict]) -> List[Dict]:
     """
@@ -221,7 +325,7 @@ def normalize_items(items: List[Dict]) -> List[Dict]:
     We keep extra keys like company/location/tags/extras/raw_text if provided.
     """
     normalized: List[Dict] = []
-    for it in items:
+    for it in items or []:
         title = (it.get("title") or "").strip()
         link = (it.get("link") or "").strip()
         if not title or not link:
