@@ -1,43 +1,51 @@
+# core/management/commands/seed_sources.py
 from django.core.management.base import BaseCommand
-from core.models import Source, Category, SourceType
+from core.models import Source, SourceType, Category
 
-WEBSITE_SOURCES = [
-    # Jobs
-    ("RemoteOK", "https://remoteok.com/", "scrape_remoteok", Category.JOB),
-    ("Remotive", "https://remotive.com/remote-jobs", "scrape_remotive", Category.JOB),
-    ("We Work Remotely", "https://weworkremotely.com/remote-jobs", "scrape_wwr", Category.JOB),
-    ("Remote.co", "https://remote.co/remote-jobs/", "scrape_remote_co", Category.JOB),
-    ("JustRemote", "https://justremote.co/remote-jobs", "scrape_justremote", Category.JOB),
-    ("Wellfound (AngelList)", "https://wellfound.com/jobs", "scrape_wellfound", Category.JOB),
+SOURCES = [
+    # Existing
+    {"name": "RemoteOK", "url": "https://remoteok.com", "type": SourceType.WEBSITE, "category": Category.JOB, "parser": "scrape_remoteok"},
+    {"name": "Remotive", "url": "https://remotive.com", "type": SourceType.WEBSITE, "category": Category.JOB, "parser": "scrape_remotive"},
+    {"name": "We Work Remotely", "url": "https://weworkremotely.com", "type": SourceType.WEBSITE, "category": Category.JOB, "parser": "scrape_wwr"},
+    {"name": "Remote.co", "url": "https://remote.co", "type": SourceType.WEBSITE, "category": Category.JOB, "parser": "scrape_remote_co"},
+    {"name": "JustRemote", "url": "https://justremote.co", "type": SourceType.WEBSITE, "category": Category.JOB, "parser": "scrape_justremote"},
+    {"name": "Wellfound (AngelList)", "url": "https://wellfound.com", "type": SourceType.WEBSITE, "category": Category.JOB, "parser": "scrape_wellfound"},
 
-    # Projects/Competitions
-    ("Devpost", "https://devpost.com/hackathons", "scrape_devpost", Category.PROJECT),
-    # Placeholders to extend (Kaggle/Gitcoin can require JS/API work)
-    ("Kaggle", "https://www.kaggle.com/competitions", "scrape_kaggle_placeholder", Category.COMPETITION),
-    ("Gitcoin", "https://www.gitcoin.co/", "scrape_gitcoin_placeholder", Category.PROJECT),
-]
+    # NEW job sources
+    {"name": "Working Nomads", "url": "https://www.workingnomads.com/jobs", "type": SourceType.WEBSITE, "category": Category.JOB, "parser": "scrape_working_nomads"},
+    {"name": "NoDesk", "url": "https://nodesk.co/remote-jobs/", "type": SourceType.WEBSITE, "category": Category.JOB, "parser": "scrape_nodesk"},
+    {"name": "Jobspresso", "url": "https://jobspresso.co/remote-work/", "type": SourceType.WEBSITE, "category": Category.JOB, "parser": "scrape_jobspresso"},
+    {"name": "Arc.dev", "url": "https://arc.dev/remote-jobs", "type": SourceType.WEBSITE, "category": Category.JOB, "parser": "scrape_arc"},
 
-TELEGRAM_CHANNELS = [
-    ("@remotejobs", "https://t.me/remotejobs", Category.JOB),
-    ("@weworkremotely", "https://t.me/weworkremotely", Category.JOB),
-    ("@remoteworkers", "https://t.me/remoteworkers", Category.JOB),
+    # Existing projects
+    {"name": "Devpost", "url": "https://devpost.com", "type": SourceType.WEBSITE, "category": Category.PROJECT, "parser": "scrape_devpost"},
+
+    # NEW project/hackathon sources
+    {"name": "HackerEarth Challenges", "url": "https://www.hackerearth.com/challenges/", "type": SourceType.WEBSITE, "category": Category.PROJECT, "parser": "scrape_hackerearth"},
+    {"name": "Devfolio Hackathons", "url": "https://devfolio.co/hackathons", "type": SourceType.WEBSITE, "category": Category.PROJECT, "parser": "scrape_devfolio"},
+
+    # Telegram channels you already had (examples)
+    {"name": "@remotejobs", "url": "https://t.me/remotejobs", "type": SourceType.TELEGRAM_CHANNEL, "category": Category.JOB, "parser": ""},
+    {"name": "@weworkremotely", "url": "https://t.me/weworkremotely", "type": SourceType.TELEGRAM_CHANNEL, "category": Category.JOB, "parser": ""},
+    {"name": "@remoteworkers", "url": "https://t.me/remoteworkers", "type": SourceType.TELEGRAM_CHANNEL, "category": Category.JOB, "parser": ""},
 ]
 
 class Command(BaseCommand):
     help = "Seed default sources"
 
-    def handle(self, *args, **opts):
+    def handle(self, *args, **options):
         created = 0
-        for name, url, parser, cat in WEBSITE_SOURCES:
-            Source.objects.get_or_create(
-                name=name,
-                defaults=dict(url=url, parser=parser, type=SourceType.WEBSITE, category=cat, is_active=True)
+        for s in SOURCES:
+            obj, was_created = Source.objects.update_or_create(
+                name=s["name"],
+                defaults={
+                    "url": s["url"],
+                    "type": s["type"],
+                    "category": s["category"],
+                    "parser": s.get("parser", ""),
+                    "is_active": True,
+                },
             )
-            created += 1
-        for name, url, cat in TELEGRAM_CHANNELS:
-            Source.objects.get_or_create(
-                name=name,
-                defaults=dict(url=url, parser="", type=SourceType.TELEGRAM_CHANNEL, category=cat, is_active=True)
-            )
-            created += 1
-        self.stdout.write(self.style.SUCCESS(f"Seeded/ensured {created} sources."))
+            if was_created:
+                created += 1
+        self.stdout.write(self.style.SUCCESS(f"Seeded/ensured {len(SOURCES)} sources (new: {created})."))
