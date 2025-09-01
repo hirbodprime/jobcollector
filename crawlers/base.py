@@ -3,18 +3,6 @@ import re
 import requests
 from typing import List, Dict, Tuple, Optional
 from bs4 import BeautifulSoup
-
-# -------------------- Remote filter --------------------
-
-REMOTE_PATTERNS = re.compile(
-    r"(?:\b(?:remote|anywhere|work[\s-]?from[\s-]?home|wfh|online|virtual)\b|"
-    r"ریموت|دورکاری|کار\s*از\s*راه\s*دور)",
-    re.I | re.U,
-)
-
-def is_remote_text(text: str) -> bool:
-    return bool(REMOTE_PATTERNS.search(text or ""))
-
 # crawlers/base.py
 from __future__ import annotations
 import os, time, random, json
@@ -27,6 +15,18 @@ try:
     import cloudscraper  # pip install cloudscraper
 except Exception:
     cloudscraper = None
+# -------------------- Remote filter --------------------
+
+REMOTE_PATTERNS = re.compile(
+    r"(?:\b(?:remote|anywhere|work[\s-]?from[\s-]?home|wfh|online|virtual)\b|"
+    r"ریموت|دورکاری|کار\s*از\s*راه\s*دور)",
+    re.I | re.U,
+)
+
+def is_remote_text(text: str) -> bool:
+    return bool(REMOTE_PATTERNS.search(text or ""))
+
+
 
 DEFAULT_HEADERS = {
     "User-Agent": (
