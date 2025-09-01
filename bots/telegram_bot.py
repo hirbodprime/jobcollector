@@ -256,7 +256,7 @@ async def post_new_items_job(context: ContextTypes.DEFAULT_TYPE):
 async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("pong")
 
-def build_application(bot_token: str, target_channel: str, post_interval_seconds: int = 10):
+def build_application(bot_token: str, target_channel: str, post_interval_seconds: int = 3):
     """Build PTB Application with an explicit JobQueue."""
     app = Application.builder().token(bot_token).job_queue(JobQueue()).build()
     app.add_handler(CommandHandler("ping", ping))

@@ -33,12 +33,23 @@ async def async_main():
     # if os.getenv("START_DJANGO_SERVER", "1") == "1":
     #     threading.Thread(target=runserver_thread, daemon=True).start()
 
-    api_id = int(os.getenv("API_ID", "0"))
-    api_hash = os.getenv("API_HASH", "")
-    string_sess = os.getenv("TELETHON_STRING_SESSION") or None
-    telethon_client = None
-    if api_id and api_hash:
-        telethon_client = await build_telethon_client(api_id, api_hash, string_sess)
+    from crawlers.pyro_channels import build_pyro_client as build_pyro_client, telegram_channels_loop as pyro_channels_loop
+
+    api_id_env = os.getenv("API_ID", "").strip()
+    api_hash = os.getenv("API_HASH", "").strip()
+    pyro_string = os.getenv("PYRO_STRING_SESSION") or None  # generate this once locally (see below)
+    pyro_client = None
+    if api_id_env and api_hash:
+        try:
+            api_id = int(api_id_env)
+        except ValueError:
+            api_id = 0
+        if api_id > 0:
+            # Optional: SOCKS5/HTTP proxy dict if needed { "scheme":"socks5", "hostname":"127.0.0.1", "port":9050 }
+            proxy = None
+            pyro_client = await build_pyro_client(api_id, api_hash, pyro_string, proxy=proxy)
+    else:
+        print("Skipping Telegram user client (no API_ID/API_HASH).")
 
     bot_token = os.getenv("BOT_TOKEN", "")
     target_channel = os.getenv("TARGET_CHANNEL", "")
@@ -56,8 +67,9 @@ async def async_main():
     await app.start()
 
     tasks = [asyncio.create_task(websites_loop(crawl_interval))]
-    if telethon_client:
-        tasks.append(asyncio.create_task(telegram_channels_loop(crawl_interval, telethon_client)))
+    if pyro_client:
+        tasks.append(asyncio.create_task(pyro_channels_loop(crawl_interval, pyro_client)))
+
 
     print("Remotebridge running. Ctrl+C to exit.")
     try:

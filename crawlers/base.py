@@ -7,8 +7,9 @@ from bs4 import BeautifulSoup
 # -------------------- Remote filter --------------------
 
 REMOTE_PATTERNS = re.compile(
-    r"\b(remote|anywhere|work[\s-]?from[\s-]?home|wfh|online|virtual)\b",
-    re.I,
+    r"(?:\b(?:remote|anywhere|work[\s-]?from[\s-]?home|wfh|online|virtual)\b|"
+    r"ریموت|دورکاری|کار\s*از\s*راه\s*دور)",
+    re.I | re.U,
 )
 
 def is_remote_text(text: str) -> bool:

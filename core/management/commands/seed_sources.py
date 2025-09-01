@@ -28,6 +28,15 @@ SOURCES = [
     {"name": "@remotejobs", "url": "https://t.me/remotejobs", "type": SourceType.TELEGRAM_CHANNEL, "category": Category.JOB, "parser": ""},
     {"name": "@weworkremotely", "url": "https://t.me/weworkremotely", "type": SourceType.TELEGRAM_CHANNEL, "category": Category.JOB, "parser": ""},
     {"name": "@remoteworkers", "url": "https://t.me/remoteworkers", "type": SourceType.TELEGRAM_CHANNEL, "category": Category.JOB, "parser": ""},
+    # Telegram channels – new ones you provided
+{"name": "@freelancer_job",      "url": "https://t.me/freelancer_job",      "type": SourceType.TELEGRAM_CHANNEL, "category": Category.JOB, "parser": ""},
+{"name": "@FreelancerH",         "url": "https://t.me/FreelancerH",         "type": SourceType.TELEGRAM_CHANNEL, "category": Category.JOB, "parser": ""},
+{"name": "@Daneshjoo_Com",       "url": "https://t.me/Daneshjoo_Com",       "type": SourceType.TELEGRAM_CHANNEL, "category": Category.JOB, "parser": ""},
+{"name": "@DorkariLand",         "url": "https://t.me/DorkariLand",         "type": SourceType.TELEGRAM_CHANNEL, "category": Category.JOB, "parser": ""},
+{"name": "@Collegian_Projection","url": "https://t.me/Collegian_Projection","type": SourceType.TELEGRAM_CHANNEL, "category": Category.JOB, "parser": ""},
+{"name": "@doorkaari",           "url": "https://t.me/doorkaari",           "type": SourceType.TELEGRAM_CHANNEL, "category": Category.JOB, "parser": ""},
+
+
 ]
 
 class Command(BaseCommand):
