@@ -258,18 +258,14 @@ async def ping(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 def build_application(bot_token: str, target_channel: str, post_interval_seconds: int = 10):
-    # ⬇️ Disable the Updater to avoid PTB 20.8 + Python 3.13 issue
     app = (
         Application.builder()
         .token(bot_token)
         .job_queue(JobQueue())
-        .updater(None)          # <<< important
         .build()
     )
 
-    # You can keep the /ping handler, but without Updater/polling it won't receive updates.
-    # app.add_handler(CommandHandler("ping", ping))
-
+    # still schedule jobs
     if app.job_queue:
         app.job_queue.run_repeating(
             post_new_items_job,
