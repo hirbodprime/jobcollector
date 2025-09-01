@@ -17,14 +17,38 @@ def is_remote_text(text: str) -> bool:
 
 # -------------------- HTTP helpers --------------------
 
-def fetch(url: str, timeout: int = 20) -> str:
-    headers = {
-        "User-Agent": "Mozilla/5.0 (RemotebridgeBot)",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-    }
-    r = requests.get(url, headers=headers, timeout=timeout)
-    r.raise_for_status()
-    return r.text
+# crawlers/base.py (improve fetch)
+import time
+import random
+import requests
+
+DEFAULT_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) "
+        "Chrome/120.0 Safari/537.36"
+    ),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "en-US,en;q=0.9",
+    "Cache-Control": "no-cache",
+    "Pragma": "no-cache",
+}
+
+def fetch(url: str, *, timeout: int = 25, retries: int = 3, sleep_base: float = 1.0) -> str:
+    last_status = None
+    last_err = None
+    for i in range(retries):
+        try:
+            resp = requests.get(url, headers=DEFAULT_HEADERS, timeout=timeout)
+            last_status = resp.status_code
+            if resp.status_code == 200 and resp.text and len(resp.text) > 200:
+                return resp.text
+            # 403/429/backoff
+        except Exception as e:
+            last_err = e
+        time.sleep(sleep_base * (2 ** i) + random.random())
+    raise RuntimeError(f"fetch({url}) failed: status={last_status} err={last_err}")
+
 
 import os
 from bs4 import BeautifulSoup, FeatureNotFound
