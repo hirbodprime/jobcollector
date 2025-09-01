@@ -1,0 +1,132 @@
+# crawlers/base.py
+import re
+import requests
+from typing import List, Dict, Tuple, Optional
+from bs4 import BeautifulSoup
+
+# -------------------- Remote filter --------------------
+
+REMOTE_PATTERNS = re.compile(
+    r"\b(remote|anywhere|work[\s-]?from[\s-]?home|wfh|online|virtual)\b",
+    re.I,
+)
+
+def is_remote_text(text: str) -> bool:
+    return bool(REMOTE_PATTERNS.search(text or ""))
+
+# -------------------- HTTP helpers --------------------
+
+def fetch(url: str, timeout: int = 20) -> str:
+    headers = {
+        "User-Agent": "Mozilla/5.0 (RemotebridgeBot)",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    }
+    r = requests.get(url, headers=headers, timeout=timeout)
+    r.raise_for_status()
+    return r.text
+
+def soupify(html: str) -> BeautifulSoup:
+    return BeautifulSoup(html, "lxml")
+
+# -------------------- Salary parsing (robust) --------------------
+
+# Tokens (no duplicate named groups)
+AMOUNT_TOKEN = r"\d+(?:[.,]\d{3})*(?:[.,]\d+)?\s*[kKmM]?"
+CURRENCY_TOKEN = r"(?:USD|EUR|GBP|CAD|AUD|CHF|JPY|\$|€|£)"
+PERIOD_TOKEN = r"(?:per\s+(?:year|month|hour|day)|/year|/month|/hour|yr|year|annum|mo|month|hr|hour|day)"
+
+# Example matches: "$80–120k", "€50/hour", "65k per year", "USD 120000 yr"
+SALARY_RE = re.compile(
+    rf"(?P<cur1>{CURRENCY_TOKEN})?\s*(?P<min>{AMOUNT_TOKEN})"
+    rf"(?:\s*[-–]\s*(?P<cur2>{CURRENCY_TOKEN})?\s*(?P<max>{AMOUNT_TOKEN}))?"
+    rf"\s*(?P<per>{PERIOD_TOKEN})?",
+    re.I,
+)
+
+CURRENCY_MAP = {"$": "USD", "€": "EUR", "£": "GBP"}
+
+def _amount_to_number(tok: str | None) -> Optional[float]:
+    if not tok:
+        return None
+    t = tok.replace(",", "").strip().lower()
+    mult = 1.0
+    if t.endswith("k"):
+        mult, t = 1_000.0, t[:-1]
+    elif t.endswith("m"):
+        mult, t = 1_000_000.0, t[:-1]
+    try:
+        return float(t) * mult
+    except ValueError:
+        return None
+
+def _period_to_enum(per: str) -> str:
+    s = (per or "").lower()
+    if any(k in s for k in ["yr", "year", "annum", "/year"]):  return "YEARLY"
+    if any(k in s for k in ["mo", "month", "/month"]):         return "MONTHLY"
+    if any(k in s for k in ["hr", "hour", "/hour"]):           return "HOURLY"
+    if "day" in s:                                             return "DAILY"
+    return ""
+
+def parse_salary(text: str) -> Tuple[Optional[float], Optional[float], str, str]:
+    """
+    Return (min, max, currency, period) parsed from free text.
+    Currency may be blank; period is YEARLY/MONTHLY/HOURLY/DAILY or ''.
+    """
+    if not text:
+        return None, None, "", ""
+    m = SALARY_RE.search(text)
+    if not m:
+        return None, None, "", ""
+    cur = (m.group("cur1") or m.group("cur2") or "").upper()
+    cur = CURRENCY_MAP.get(cur, cur)
+    mn = _amount_to_number(m.group("min"))
+    mx = _amount_to_number(m.group("max"))
+    per = _period_to_enum(m.group("per") or "")
+    return mn, mx, cur, per
+
+# -------------------- Normalization --------------------
+
+def normalize_items(items: List[Dict]) -> List[Dict]:
+    """
+    Ensure required keys exist and backfill salary by parsing free text.
+    We keep extra keys like company/location/tags/extras/raw_text if provided.
+    """
+    normalized: List[Dict] = []
+    for it in items:
+        title = (it.get("title") or "").strip()
+        link = (it.get("link") or "").strip()
+        if not title or not link:
+            continue
+
+        desc = (it.get("description") or "").strip()
+        mn = it.get("salary_min")
+        mx = it.get("salary_max")
+        cur = (it.get("currency") or "").upper()
+        period = it.get("period") or ""
+
+        # If no structured salary provided, parse from text/extras
+        if mn is None and mx is None:
+            pmn, pmx, pcur, pper = parse_salary(
+                " ".join([title, desc, str(it.get("extras") or "")])
+            )
+            mn = mn or pmn
+            mx = mx or pmx
+            cur = cur or pcur
+            period = period or pper
+
+        normalized.append({
+            "title": title,
+            "description": desc,
+            "link": link,
+            "category": it.get("category", "JOB"),
+            "company": (it.get("company") or "").strip(),
+            "location": (it.get("location") or "").strip(),
+            "salary_min": mn,
+            "salary_max": mx,
+            "currency": cur,
+            "period": period,
+            "tags": it.get("tags") or [],
+            "extras": it.get("extras") or {},
+            "raw_text": it.get("raw_text") or "",
+        })
+    return normalized

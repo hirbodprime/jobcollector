@@ -1,0 +1,49 @@
+# --- Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# --- Virtual envs
+.venv/
+venv/
+ENV/
+env/
+myvenv/
+
+# --- Environment files (keep example only)
+.env
+.env.*
+!.env.example
+
+# --- Django / data
+db.sqlite3
+media/
+static/
+staticfiles/
+*.log
+
+# --- Telethon / sessions
+telethon.session*
+*.session
+*.session-journal
+
+# --- Test / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# --- Editors / OS
+.vscode/
+.idea/
+*.code-workspace
+.DS_Store
+Thumbs.db
+
+# --- Node (just in case)
+node_modules/
