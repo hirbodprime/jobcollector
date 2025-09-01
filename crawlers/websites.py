@@ -3,6 +3,7 @@ from typing import List, Dict
 import json
 from urllib.parse import urljoin
 from .base import fetch, soupify, is_remote_text, normalize_items, parse_salary
+from .base import fetch, fetch_json, soupify, parse_rss, txt, attr, abs_url, no_fail
 
 # ----------------------------
 # Helpers
@@ -11,7 +12,8 @@ def _clip(s: str, n: int = 500) -> str:
     s = (s or "").strip()
     return (s[: n - 1] + "…") if len(s) > n else s
 
-def _with_salary_fields(item: Dict, text: str) -> Dict:
+def _with_salary_fields(item: dict, text: str) -> dict:
+    from .base import parse_salary  # or your original import
     mn, mx, cur, per = parse_salary(text or "")
     if mn is not None: item["salary_min"] = mn
     if mx is not None: item["salary_max"] = mx
@@ -22,38 +24,48 @@ def _with_salary_fields(item: Dict, text: str) -> Dict:
 # =========================================================
 # Core Remote JOB Sources (you already had)
 # =========================================================
-
-def scrape_remoteok() -> List[Dict]:
-    data = json.loads(fetch("https://remoteok.com/api"))
+@no_fail
+def scrape_remoteok() -> list[dict]:
+    feed = fetch("https://remoteok.com/remote-jobs.rss")
+    entries = parse_rss(feed)
     out = []
-    for job in data[1:]:
-        url = job.get("url") or ""
-        title = job.get("position") or ""
-        company = job.get("company") or ""
-        if not url or not title:
+    for e in entries:
+        title, link, desc = e["title"], e["link"], e.get("description", "")
+        if not is_remote_text(f"{title} {desc} remote anywhere"):
             continue
-        if not is_remote_text(" ".join([title, company, "remote"])):  # keep remote-only
-            continue
-
-        salary_text = job.get("salary") or job.get("compensation") or ""
         item = {
             "title": title,
-            "description": job.get("description") or ", ".join(job.get("tags", [])),
-            "link": url,
+            "description": _clip(desc),
+            "link": link,
             "category": "JOB",
-            "company": company,
-            "location": job.get("location") or "Remote",
-            "tags": job.get("tags") or [],
-            "extras": job,
+            "company": "",
+            "location": "Remote",
+            "tags": [],
+            "extras": {"published": e.get("published","")},
         }
-        text_for_salary = " ".join([
-            salary_text,
-            job.get("description") or "",
-            title, company
-        ])
-        out.append(_with_salary_fields(item, text_for_salary))
+        out.append(_with_salary_fields(item, f"{title} {desc}"))
     return normalize_items(out)
 
+@no_fail
+def scrape_wwr() -> list[dict]:
+    feed = fetch("https://weworkremotely.com/remote-jobs.rss")
+    entries = parse_rss(feed)
+    out = []
+    for e in entries:
+        title, link, desc = e["title"], e["link"], e.get("description", "")
+        item = {
+            "title": title,
+            "description": _clip(desc),
+            "link": link,
+            "category": "JOB",
+            "company": "",
+            "location": "Remote",
+            "tags": [],
+            "extras": {"published": e.get("published","")},
+        }
+        out.append(_with_salary_fields(item, f"{title} {desc}"))
+    return normalize_items(out)
+@no_fail
 def scrape_remotive() -> List[Dict]:
     data = json.loads(fetch("https://remotive.com/api/remote-jobs"))
     jobs = data.get("jobs", [])
@@ -90,34 +102,7 @@ def scrape_remotive() -> List[Dict]:
             if per: item["period"] = per
         out.append(item)
     return normalize_items(out)
-
-def scrape_wwr() -> List[Dict]:
-    html = fetch("https://weworkremotely.com/remote-jobs")
-    s = soupify(html)
-    out = []
-    for li in s.select("section.jobs li.feature"):
-        a = li.select_one("a")
-        if not a or not a.get("href"): 
-            continue
-        link = urljoin("https://weworkremotely.com", a.get("href"))
-        company = (li.select_one("span.company") or {}).get_text(strip=True)
-        title = (li.select_one("span.title") or {}).get_text(strip=True)
-        region = (li.select_one("span.region") or {}).get_text(strip=True)
-        if not is_remote_text(f"{company} {title} remote"):
-            continue
-        item = {
-            "title": title,
-            "description": region,
-            "link": link,
-            "category": "JOB",
-            "company": company,
-            "location": region or "Remote",
-            "tags": [t.get_text(strip=True) for t in li.select("span.feature")],
-            "extras": {"region": region},
-        }
-        out.append(_with_salary_fields(item, f"{title} {company} {region}"))
-    return normalize_items(out)
-
+@no_fail
 def scrape_remote_co() -> List[Dict]:
     html = fetch("https://remote.co/remote-jobs/")
     s = soupify(html)
@@ -143,7 +128,7 @@ def scrape_remote_co() -> List[Dict]:
         }
         out.append(_with_salary_fields(item, f"{title} {company} {loc}"))
     return normalize_items(out)
-
+@no_fail
 def scrape_justremote() -> List[Dict]:
     html = fetch("https://justremote.co/remote-jobs")
     s = soupify(html)
@@ -168,7 +153,7 @@ def scrape_justremote() -> List[Dict]:
         }
         out.append(_with_salary_fields(item, f"{title} {company} {loc} {' '.join(tags)}"))
     return normalize_items(out)
-
+@no_fail
 def scrape_wellfound() -> List[Dict]:
     html = fetch("https://wellfound.com/role/software-engineer?remote=true")
     s = soupify(html)
@@ -192,32 +177,28 @@ def scrape_wellfound() -> List[Dict]:
 # Extra Remote JOB Sources (new)
 # =========================================================
 
+@no_fail
 def scrape_himalayas() -> list[dict]:
     html = fetch("https://himalayas.app/jobs")
     s = soupify(html)
-    out: list[dict] = []
+    out = []
     for a in s.select("a[href^='/jobs/']"):
-        title = (a.get_text(" ", strip=True) or "")
-        link = urljoin("https://himalayas.app", a.get("href", ""))
-        card = a.parent
-        meta = " ".join(x.get_text(" ", strip=True) for x in card.select("span,div"))
+        link = abs_url("https://himalayas.app", attr(a, "href"))
+        title = txt(a)
+        card = a.find_parent(["article","div"]) or a
+        company = txt(card.select_one("[data-testid*='company'], .text-gray-500, .text-slate-500, [class*='company']"))
+        meta = " ".join(txt(x) for x in card.select("span,div,li,small"))
         if not title or not link:
             continue
         if not is_remote_text(f"{title} {meta} remote anywhere"):
             continue
         item = {
-            "title": title,
-            "description": _clip(meta),
-            "link": link,
-            "category": "JOB",
-            "company": "",
-            "location": "Remote",
-            "tags": [],
-            "extras": {},
+            "title": title, "description": _clip(meta), "link": link, "category": "JOB",
+            "company": company, "location": "Remote", "extras": {}
         }
-        out.append(_with_salary_fields(item, f"{title} {meta}"))
+        out.append(_with_salary_fields(item, f"{title} {company} {meta}"))
     return normalize_items(out)
-
+@no_fail
 def scrape_jobicy() -> list[dict]:
     html = fetch("https://jobicy.com/remote-jobs")
     s = soupify(html)
@@ -245,7 +226,7 @@ def scrape_jobicy() -> list[dict]:
         }
         out.append(_with_salary_fields(item, f"{title} {company} {loc} {desc}"))
     return normalize_items(out)
-
+@no_fail
 def scrape_skipthedrive() -> list[dict]:
     html = fetch("https://skipthedrive.com/remote-jobs/")
     s = soupify(html)
@@ -273,7 +254,7 @@ def scrape_skipthedrive() -> list[dict]:
         }
         out.append(_with_salary_fields(item, f"{title} {company} {loc} {desc}"))
     return normalize_items(out)
-
+@no_fail
 def scrape_remotees() -> list[dict]:
     html = fetch("https://remotees.com/remote-jobs")
     s = soupify(html)
@@ -301,7 +282,7 @@ def scrape_remotees() -> list[dict]:
         }
         out.append(_with_salary_fields(item, f"{title} {company} {loc} {desc}"))
     return normalize_items(out)
-
+@no_fail
 def scrape_powertofly() -> list[dict]:
     html = fetch("https://powertofly.com/jobs?location=Remote")
     s = soupify(html)
@@ -327,7 +308,7 @@ def scrape_powertofly() -> list[dict]:
         }
         out.append(_with_salary_fields(item, f"{title} {meta}"))
     return normalize_items(out)
-
+@no_fail
 def scrape_freshremote() -> list[dict]:
     html = fetch("https://freshremote.work/")
     s = soupify(html)
@@ -353,7 +334,7 @@ def scrape_freshremote() -> list[dict]:
         }
         out.append(_with_salary_fields(item, f"{title} {meta}"))
     return normalize_items(out)
-
+@no_fail
 def scrape_remote_io() -> list[dict]:
     """remote.io/remote-jobs (best-effort; site may be JS-heavy)"""
     html = fetch("https://remote.io/remote-jobs")
@@ -378,7 +359,7 @@ def scrape_remote_io() -> list[dict]:
         }
         out.append(_with_salary_fields(item, f"{title} {meta}"))
     return normalize_items(out)
-
+@no_fail
 def scrape_remotely_jobs() -> list[dict]:
     """remotely.jobs (best-effort)"""
     html = fetch("https://remotely.jobs/")
@@ -403,7 +384,7 @@ def scrape_remotely_jobs() -> list[dict]:
         }
         out.append(_with_salary_fields(item, f"{title} {meta}"))
     return normalize_items(out)
-
+@no_fail
 def scrape_weremoto() -> list[dict]:
     html = fetch("https://weremoto.com/remote-jobs")
     s = soupify(html)
@@ -427,7 +408,7 @@ def scrape_weremoto() -> list[dict]:
         }
         out.append(_with_salary_fields(item, f"{title} {meta}"))
     return normalize_items(out)
-
+@no_fail
 def scrape_remote_tech_jobs() -> list[dict]:
     html = fetch("https://remotetechjobs.com/")
     s = soupify(html)
@@ -451,7 +432,7 @@ def scrape_remote_tech_jobs() -> list[dict]:
         }
         out.append(_with_salary_fields(item, f"{title} {meta}"))
     return normalize_items(out)
-
+@no_fail
 def scrape_authentic_jobs() -> list[dict]:
     html = fetch("https://www.authenticjobs.com/?location=remote")
     s = soupify(html)
@@ -475,7 +456,7 @@ def scrape_authentic_jobs() -> list[dict]:
         }
         out.append(_with_salary_fields(item, f"{title} {meta}"))
     return normalize_items(out)
-
+@no_fail
 def scrape_nofluffjobs() -> list[dict]:
     """NoFluffJobs remote board (often JS-heavy; may return [])"""
     html = fetch("https://nofluffjobs.com/remote")
@@ -500,7 +481,7 @@ def scrape_nofluffjobs() -> list[dict]:
         }
         out.append(_with_salary_fields(item, f"{title} {meta}"))
     return normalize_items(out)
-
+@no_fail
 def scrape_the_hub() -> list[dict]:
     html = fetch("https://thehub.io/jobs?location=remote")
     s = soupify(html)
@@ -528,7 +509,7 @@ def scrape_the_hub() -> list[dict]:
 # =========================================================
 # Your existing extra sources
 # =========================================================
-
+@no_fail
 def scrape_working_nomads() -> list[dict]:
     html = fetch("https://www.workingnomads.com/jobs")
     s = soupify(html)
@@ -560,7 +541,7 @@ def scrape_working_nomads() -> list[dict]:
         }
         out.append(_with_salary_fields(item, f"{title} {company} {location}"))
     return normalize_items(out)
-
+@no_fail
 def scrape_nodesk() -> list[dict]:
     html = fetch("https://nodesk.co/remote-jobs/")
     s = soupify(html)
@@ -587,7 +568,7 @@ def scrape_nodesk() -> list[dict]:
         }
         out.append(_with_salary_fields(item, f"{title} {company} {loc} {desc}"))
     return normalize_items(out)
-
+@no_fail
 def scrape_jobspresso() -> list[dict]:
     html = fetch("https://jobspresso.co/remote-work/")
     s = soupify(html)
@@ -619,36 +600,33 @@ def scrape_jobspresso() -> list[dict]:
         out.append(_with_salary_fields(item, f"{title} {company} {loc} {' '.join(tags)}"))
     return normalize_items(out)
 
+@no_fail
 def scrape_arc() -> list[dict]:
     html = fetch("https://arc.dev/remote-jobs")
     s = soupify(html)
-    out: list[dict] = []
-    for card in s.select("a[href^='/remote-jobs/']"):
-        link = urljoin("https://arc.dev", card.get("href", "").strip())
-        title = (card.select_one("[data-testid='job-card-title']") or card.select_one("h3") or {}).get_text(strip=True)
-        company = (card.select_one("[data-testid='job-card-company']") or {}).get_text(strip=True)
-        loc = (card.select_one("[data-testid='job-card-location']") or {}).get_text(strip=True)
-        desc = " ".join(x.get_text(" ", strip=True) for x in card.select("[data-testid*='job-card']"))
+    out = []
+    for a in s.select("a[href^='/remote-jobs/']"):
+        link = abs_url("https://arc.dev", attr(a, "href"))
+        title = txt(a.select_one("[data-testid='job-card-title']")) or txt(a.select_one("h3")) or txt(a)
+        company = txt(a.select_one("[data-testid='job-card-company']"))
+        loc = txt(a.select_one("[data-testid='job-card-location']")) or "Remote"
+        desc = " ".join(txt(x) for x in a.select("[data-testid*='job-card']"))
         if not title or not link:
             continue
         if not is_remote_text(f"{title} {desc} remote anywhere"):
             continue
         item = {
-            "title": title,
-            "description": desc,
-            "link": link,
-            "category": "JOB",
-            "company": company,
-            "location": loc or "Remote",
-            "extras": {},
+            "title": title, "description": _clip(desc), "link": link, "category": "JOB",
+            "company": company, "location": loc, "extras": {}
         }
         out.append(_with_salary_fields(item, f"{title} {company} {loc} {desc}"))
     return normalize_items(out)
 
+
 # =========================================================
 # Projects / Hackathons
 # =========================================================
-
+@no_fail
 def scrape_devpost() -> List[Dict]:
     html = fetch("https://devpost.com/hackathons?sort_by=deadline&status=upcoming&open_to=all")
     s = soupify(html)
@@ -674,7 +652,7 @@ def scrape_devpost() -> List[Dict]:
         }
         out.append(_with_salary_fields(item, f"{title} {info}"))
     return normalize_items(out)
-
+@no_fail
 def scrape_hackerearth() -> list[dict]:
     html = fetch("https://www.hackerearth.com/challenges/")
     s = soupify(html)
@@ -699,7 +677,7 @@ def scrape_hackerearth() -> list[dict]:
         }
         out.append(item)
     return normalize_items(out)
-
+@no_fail
 def scrape_devfolio() -> list[dict]:
     html = fetch("https://devfolio.co/hackathons")
     s = soupify(html)
@@ -727,31 +705,27 @@ def scrape_devfolio() -> list[dict]:
 # IRANIAN JOB BOARDS (take ALL jobs; no remote filter)
 # -------------------------------
 
+@no_fail
 def scrape_jobinja() -> list[dict]:
     html = fetch("https://jobinja.ir/jobs")
     s = soupify(html)
-    out: list[dict] = []
+    out = []
     for a in s.select("a[href^='/jobs/']"):
-        link = urljoin("https://jobinja.ir", a.get("href", ""))
-        title = a.get_text(" ", strip=True)
-        card = a.find_parent(["article", "li", "div"])
-        comp = (card.select_one(".c-jobList__meta-item--company, [class*='company']") or {}).get_text(" ", strip=True) if card else ""
-        loc  = (card.select_one(".c-jobList__meta-item--location, [class*='location']") or {}).get_text(" ", strip=True) if card else ""
-        meta = " ".join(x.get_text(" ", strip=True) for x in (card.select("span,div,li") if card else []))
+        link = abs_url("https://jobinja.ir", attr(a, "href"))
+        title = txt(a)
+        card = a.find_parent(["article","li","div"]) or a
+        company = txt(card.select_one(".c-jobList__meta-item--company, [class*='company']"))
+        loc = txt(card.select_one(".c-jobList__meta-item--location, [class*='location']"))
+        meta = " ".join(txt(x) for x in card.select("span,div,li,small"))
         if not title or not link:
             continue
         item = {
-            "title": title,
-            "description": _clip(meta),
-            "link": link,
-            "category": "JOB",
-            "company": comp,
-            "location": loc or "",
-            "extras": {},
+            "title": title, "description": _clip(meta), "link": link, "category": "JOB",
+            "company": company, "location": loc, "extras": {}
         }
-        out.append(_with_salary_fields(item, f"{title} {comp} {loc} {meta}"))
+        out.append(_with_salary_fields(item, f"{title} {company} {loc} {meta}"))
     return normalize_items(out)
-
+@no_fail
 def scrape_jobvision() -> list[dict]:
     html = fetch("https://jobvision.ir/jobs")
     s = soupify(html)
@@ -776,7 +750,7 @@ def scrape_jobvision() -> list[dict]:
         }
         out.append(_with_salary_fields(item, f"{title} {comp} {loc} {meta}"))
     return normalize_items(out)
-
+@no_fail
 def scrape_irantalent() -> list[dict]:
     html = fetch("https://www.irantalent.com/jobs")
     s = soupify(html)
@@ -801,7 +775,7 @@ def scrape_irantalent() -> list[dict]:
         }
         out.append(_with_salary_fields(item, f"{title} {comp} {loc} {meta}"))
     return normalize_items(out)
-
+@no_fail
 def scrape_karboom() -> list[dict]:
     html = fetch("https://karboom.io/jobs")
     s = soupify(html)
@@ -826,7 +800,7 @@ def scrape_karboom() -> list[dict]:
         }
         out.append(_with_salary_fields(item, f"{title} {comp} {loc} {meta}"))
     return normalize_items(out)
-
+@no_fail
 def scrape_e_estekhdam() -> list[dict]:
     html = fetch("https://www.e-estekhdam.com/")
     s = soupify(html)
@@ -851,7 +825,7 @@ def scrape_e_estekhdam() -> list[dict]:
         }
         out.append(_with_salary_fields(item, f"{title} {comp} {loc} {meta}"))
     return normalize_items(out)
-
+@no_fail
 def scrape_quera_jobs() -> list[dict]:
     html = fetch("https://quera.org/jobs")
     s = soupify(html)
@@ -880,7 +854,7 @@ def scrape_quera_jobs() -> list[dict]:
 # -------------------------------
 # IRANIAN FREELANCE / PROJECT BOARDS (take ALL projects)
 # -------------------------------
-
+@no_fail
 def scrape_ponisha() -> list[dict]:
     # public search list is SSR
     html = fetch("https://ponisha.ir/search/projects")
@@ -905,7 +879,7 @@ def scrape_ponisha() -> list[dict]:
         }
         out.append(_with_salary_fields(item, f"{title} {budget} {meta}"))
     return normalize_items(out)
-
+@no_fail
 def scrape_parscoders() -> list[dict]:
     html = fetch("https://parscoders.com/project/list/")
     s = soupify(html)
@@ -929,28 +903,9 @@ def scrape_parscoders() -> list[dict]:
         }
         out.append(_with_salary_fields(item, f"{title} {budget} {meta}"))
     return normalize_items(out)
-def scrape_himalayas() -> list[dict]:
-    html = fetch("https://himalayas.app/jobs")
-    s = soupify(html)
-    out = []
-    for a in s.select("a[href^='/jobs/']"):
-        link = urljoin("https://himalayas.app", a.get("href", ""))
-        title = a.get_text(" ", strip=True)
-        card = a.find_parent("article") or a.find_parent("div")
-        company = (card.select_one("[data-testid*='company'], .text-gray-500, .text-slate-500") or {}).get_text(" ", strip=True) if card else ""
-        loc = "Remote"
-        meta = " ".join(x.get_text(" ", strip=True) for x in (card.select("span,div,li") if card else []))
-        if not title or not link: 
-            continue
-        if not is_remote_text(f"{title} {meta} remote anywhere"):
-            continue
-        item = {
-            "title": title, "description": _clip(meta), "link": link, "category": "JOB",
-            "company": company, "location": loc, "extras": {}
-        }
-        out.append(_with_salary_fields(item, f"{title} {company} {meta}"))
-    return normalize_items(out)
 
+
+@no_fail
 def scrape_remote_io() -> list[dict]:
     html = fetch("https://remote.io/remote-jobs")
     s = soupify(html)
@@ -968,7 +923,7 @@ def scrape_remote_io() -> list[dict]:
                 "company": company, "location": "Remote", "extras": {}}
         out.append(_with_salary_fields(item, f"{title} {company} {meta}"))
     return normalize_items(out)
-
+@no_fail
 def scrape_skipthedrive() -> list[dict]:
     html = fetch("https://skipthedrive.com/remote-jobs/")
     s = soupify(html)
@@ -988,7 +943,7 @@ def scrape_skipthedrive() -> list[dict]:
                 "company": company, "location": loc, "extras": {}}
         out.append(_with_salary_fields(item, meta))
     return normalize_items(out)
-
+@no_fail
 def scrape_jobicy() -> list[dict]:
     html = fetch("https://jobicy.com/remote-jobs")
     s = soupify(html)
@@ -1007,7 +962,7 @@ def scrape_jobicy() -> list[dict]:
                 "company": company, "location": loc, "extras": {}}
         out.append(_with_salary_fields(item, f"{title} {company} {meta}"))
     return normalize_items(out)
-
+@no_fail
 def scrape_remotees() -> list[dict]:
     html = fetch("https://remotees.com/remote-jobs")
     s = soupify(html)
@@ -1026,7 +981,7 @@ def scrape_remotees() -> list[dict]:
                 "company": company, "location": "Remote", "extras": {}}
         out.append(_with_salary_fields(item, meta))
     return normalize_items(out)
-
+@no_fail
 def scrape_remotely_jobs() -> list[dict]:
     html = fetch("https://remotely.jobs/")
     s = soupify(html)
@@ -1044,7 +999,7 @@ def scrape_remotely_jobs() -> list[dict]:
                 "company": company, "location": "Remote", "extras": {}}
         out.append(_with_salary_fields(item, meta))
     return normalize_items(out)
-
+@no_fail
 def scrape_weremoto() -> list[dict]:
     html = fetch("https://weremoto.com/remote-jobs")
     s = soupify(html)
@@ -1062,7 +1017,7 @@ def scrape_weremoto() -> list[dict]:
                 "company": company, "location": "Remote", "extras": {}}
         out.append(_with_salary_fields(item, meta))
     return normalize_items(out)
-
+@no_fail
 def scrape_remote_tech_jobs() -> list[dict]:
     html = fetch("https://remotetechjobs.com/")
     s = soupify(html)
@@ -1082,25 +1037,27 @@ def scrape_remote_tech_jobs() -> list[dict]:
         out.append(_with_salary_fields(item, meta))
     return normalize_items(out)
 
+@no_fail
 def scrape_powertofly() -> list[dict]:
     html = fetch("https://powertofly.com/jobs?location=Remote")
     s = soupify(html)
     out = []
     for a in s.select("a[href^='/jobs/']"):
-        link = urljoin("https://powertofly.com", a.get("href",""))
-        title = a.get_text(" ", strip=True)
-        card = a.find_parent("article") or a.find_parent("div")
-        company = (card.select_one("[class*='company'], .company") or {}).get_text(" ", strip=True) if card else ""
-        meta = " ".join(x.get_text(" ", strip=True) for x in (card.select("span,div,li") if card else []))
+        link = abs_url("https://powertofly.com", attr(a, "href"))
+        title = txt(a)
+        card = a.find_parent(["article","div"]) or a
+        meta = " ".join(txt(x) for x in card.select("span,div,li,small"))
         if not title or not link:
             continue
-        if not is_remote_text(f"{title} {meta}"):
+        if not is_remote_text(f"{title} {meta} remote"):
             continue
-        item = {"title": title, "description": _clip(meta), "link": link, "category": "JOB",
-                "company": company, "location": "Remote", "extras": {}}
-        out.append(_with_salary_fields(item, meta))
+        item = {
+            "title": title, "description": _clip(meta), "link": link, "category": "JOB",
+            "company": "", "location": "Remote", "extras": {}
+        }
+        out.append(_with_salary_fields(item, f"{title} {meta}"))
     return normalize_items(out)
-
+@no_fail
 def scrape_freshremote() -> list[dict]:
     html = fetch("https://freshremote.work/")
     s = soupify(html)
@@ -1118,7 +1075,7 @@ def scrape_freshremote() -> list[dict]:
                 "company": company, "location": "Remote", "extras": {}}
         out.append(_with_salary_fields(item, tags))
     return normalize_items(out)
-
+@no_fail
 def scrape_authentic_jobs() -> list[dict]:
     html = fetch("https://www.authenticjobs.com/?location=remote")
     s = soupify(html)
@@ -1137,26 +1094,28 @@ def scrape_authentic_jobs() -> list[dict]:
         out.append(_with_salary_fields(item, meta))
     return normalize_items(out)
 
+@no_fail
 def scrape_nofluffjobs() -> list[dict]:
     html = fetch("https://nofluffjobs.com/remote")
     s = soupify(html)
     out = []
-    for a in s.select("a[href^='/job/']"):
-        link = urljoin("https://nofluffjobs.com", a.get("href",""))
-        title = a.get_text(" ", strip=True)
-        card = a.find_parent("article") or a.find_parent("div")
-        company = (card.select_one("[data-testid*='company'], .posting-company") or {}).get_text(" ", strip=True) if card else ""
-        loc = "Remote"
-        meta = " ".join(x.get_text(" ", strip=True) for x in (card.select("span,div,li") if card else []))
+    for a in s.select("a[href^='/job/'], a[href^='/pl/job/']"):
+        link = abs_url("https://nofluffjobs.com", attr(a, "href"))
+        title = txt(a)
+        card = a.find_parent(["article","div"]) or a
+        company = txt(card.select_one("[data-testid*='company'], .posting-company, [class*='company']"))
+        meta = " ".join(txt(x) for x in card.select("span,div,li,small"))
         if not title or not link:
             continue
         if not is_remote_text(f"{title} {meta}"):
             continue
-        item = {"title": title, "description": _clip(meta), "link": link, "category": "JOB",
-                "company": company, "location": loc, "extras": {}}
-        out.append(_with_salary_fields(item, meta))
+        item = {
+            "title": title, "description": _clip(meta), "link": link, "category": "JOB",
+            "company": company, "location": "Remote", "extras": {}
+        }
+        out.append(_with_salary_fields(item, f"{title} {company} {meta}"))
     return normalize_items(out)
-
+@no_fail
 def scrape_the_hub() -> list[dict]:
     html = fetch("https://thehub.io/jobs?location=remote")
     s = soupify(html)
@@ -1175,6 +1134,7 @@ def scrape_the_hub() -> list[dict]:
                 "company": company, "location": "Remote", "extras": {}}
         out.append(_with_salary_fields(item, meta))
     return normalize_items(out)
+@no_fail
 def scrape_freelancer_com() -> list[dict]:
     html = fetch("https://www.freelancer.com/jobs/")
     s = soupify(html)
@@ -1192,7 +1152,7 @@ def scrape_freelancer_com() -> list[dict]:
                 "company": "", "location": "Online", "extras": {}}
         out.append(_with_salary_fields(item, meta))
     return normalize_items(out)
-
+@no_fail
 def scrape_peopleperhour() -> list[dict]:
     html = fetch("https://www.peopleperhour.com/freelance-jobs")
     s = soupify(html)
@@ -1209,7 +1169,7 @@ def scrape_peopleperhour() -> list[dict]:
                 "company": "", "location": "Online", "extras": {}}
         out.append(_with_salary_fields(item, f"{budget} {desc}"))
     return normalize_items(out)
-
+@no_fail
 def scrape_guru() -> list[dict]:
     html = fetch("https://www.guru.com/work/")
     s = soupify(html)
@@ -1226,7 +1186,7 @@ def scrape_guru() -> list[dict]:
                 "company": "", "location": "Online", "extras": {}}
         out.append(_with_salary_fields(item, f"{budget} {desc}"))
     return normalize_items(out)
-
+@no_fail
 def scrape_contra() -> list[dict]:
     html = fetch("https://contra.com/jobs")
     s = soupify(html)
@@ -1242,7 +1202,7 @@ def scrape_contra() -> list[dict]:
                 "company": "", "location": "Online", "extras": {}}
         out.append(_with_salary_fields(item, meta))
     return normalize_items(out)
-
+@no_fail
 def scrape_braintrust() -> list[dict]:
     html = fetch("https://www.usebraintrust.com/jobs")
     s = soupify(html)
@@ -1258,7 +1218,7 @@ def scrape_braintrust() -> list[dict]:
                 "company": "", "location": "Online", "extras": {}}
         out.append(_with_salary_fields(item, meta))
     return normalize_items(out)
-
+@no_fail
 def scrape_gunio() -> list[dict]:
     html = fetch("https://gun.io/jobs")
     s = soupify(html)
@@ -1274,7 +1234,7 @@ def scrape_gunio() -> list[dict]:
                 "company": "", "location": "Online", "extras": {}}
         out.append(_with_salary_fields(item, meta))
     return normalize_items(out)
-
+@no_fail
 def scrape_flexiple() -> list[dict]:
     html = fetch("https://flexiple.com/freelance-jobs/")
     s = soupify(html)
@@ -1289,7 +1249,7 @@ def scrape_flexiple() -> list[dict]:
                 "company": "", "location": "Online", "extras": {}}
         out.append(_with_salary_fields(item, desc))
     return normalize_items(out)
-
+@no_fail
 def scrape_topcoder() -> list[dict]:
     html = fetch("https://www.topcoder.com/challenges")
     s = soupify(html)
@@ -1304,7 +1264,7 @@ def scrape_topcoder() -> list[dict]:
                 "company": "", "location": "Online", "extras": {}}
         out.append(_with_salary_fields(item, desc))
     return normalize_items(out)
-
+@no_fail
 def scrape_dribbble_jobs() -> list[dict]:
     html = fetch("https://dribbble.com/jobs?location=remote")
     s = soupify(html)
@@ -1319,7 +1279,7 @@ def scrape_dribbble_jobs() -> list[dict]:
                 "company": "", "location": "Remote", "extras": {}}
         out.append(_with_salary_fields(item, meta))
     return normalize_items(out)
-
+@no_fail
 def scrape_behance_jobs() -> list[dict]:
     html = fetch("https://www.behance.net/joblist?location=remote")
     s = soupify(html)
@@ -1334,7 +1294,7 @@ def scrape_behance_jobs() -> list[dict]:
                 "company": "", "location": "Remote", "extras": {}}
         out.append(_with_salary_fields(item, meta))
     return normalize_items(out)
-
+@no_fail
 def scrape_twine() -> list[dict]:
     html = fetch("https://www.twine.net/jobs")
     s = soupify(html)
@@ -1349,7 +1309,7 @@ def scrape_twine() -> list[dict]:
                 "company": "", "location": "Online", "extras": {}}
         out.append(_with_salary_fields(item, meta))
     return normalize_items(out)
-
+@no_fail
 def scrape_workana() -> list[dict]:
     html = fetch("https://www.workana.com/en/jobs")
     s = soupify(html)
@@ -1364,7 +1324,7 @@ def scrape_workana() -> list[dict]:
                 "company": "", "location": "Online", "extras": {}}
         out.append(_with_salary_fields(item, meta))
     return normalize_items(out)
-
+@no_fail
 def scrape_freelancermap() -> list[dict]:
     html = fetch("https://www.freelancermap.com/it-projects")
     s = soupify(html)
@@ -1379,7 +1339,7 @@ def scrape_freelancermap() -> list[dict]:
                 "company": "", "location": "Online", "extras": {}}
         out.append(_with_salary_fields(item, meta))
     return normalize_items(out)
-
+@no_fail
 def scrape_truelancer() -> list[dict]:
     html = fetch("https://www.truelancer.com/freelance-jobs")
     s = soupify(html)
@@ -1396,6 +1356,7 @@ def scrape_truelancer() -> list[dict]:
                 "company": "", "location": "Online", "extras": {}}
         out.append(_with_salary_fields(item, f"{budget} {desc}"))
     return normalize_items(out)
+@no_fail
 def scrape_taikai() -> list[dict]:
     html = fetch("https://taikai.network/hackathons")
     s = soupify(html)
@@ -1408,7 +1369,7 @@ def scrape_taikai() -> list[dict]:
                 "company": "", "location": "Online", "extras": {}}
         out.append(item)
     return normalize_items(out)
-
+@no_fail
 def scrape_mlh() -> list[dict]:
     html = fetch("https://mlh.io/seasons")
     s = soupify(html)
@@ -1421,7 +1382,7 @@ def scrape_mlh() -> list[dict]:
                 "company": "", "location": "Online", "extras": {}}
         out.append(item)
     return normalize_items(out)
-
+@no_fail
 def scrape_itch_io_jams() -> list[dict]:
     html = fetch("https://itch.io/jams")
     s = soupify(html)
@@ -1434,7 +1395,7 @@ def scrape_itch_io_jams() -> list[dict]:
                 "company": "", "location": "Online", "extras": {}}
         out.append(item)
     return normalize_items(out)
-
+@no_fail
 def scrape_codalab() -> list[dict]:
     html = fetch("https://codalab.lisn.upsaclay.fr/competitions/")
     s = soupify(html)
@@ -1447,7 +1408,7 @@ def scrape_codalab() -> list[dict]:
                 "company": "", "location": "Online", "extras": {}}
         out.append(item)
     return normalize_items(out)
-
+@no_fail
 def scrape_product_hunt() -> list[dict]:
     # Project discovery (not strictly jobs) – still valuable for new projects/opportunities
     html = fetch("https://www.producthunt.com/posts")
@@ -1463,6 +1424,7 @@ def scrape_product_hunt() -> list[dict]:
                 "company": "", "location": "Online", "extras": {}}
         out.append(item)
     return normalize_items(out)
+@no_fail
 def scrape_kaggle() -> list[dict]:
     html = fetch("https://www.kaggle.com/competitions")
     s = soupify(html)
@@ -1476,6 +1438,7 @@ def scrape_kaggle() -> list[dict]:
                 "company": "", "location": "Online", "extras": {}}
         out.append(item)
     return normalize_items(out)
+@no_fail
 
 def scrape_gitcoin() -> list[dict]:
     # Gitcoin explorer is mostly dynamic; fetch will often return limited SSR.
@@ -1506,3 +1469,10 @@ def scrape_kaggle_placeholder() -> List[Dict]:
 
 def scrape_gitcoin_placeholder() -> List[Dict]:
     return []
+
+
+import inspect, sys
+_mod = sys.modules[__name__]
+for _name, _fn in list(vars(_mod).items()):
+    if _name.startswith("scrape_") and callable(_fn):
+        setattr(_mod, _name, no_fail(_fn))

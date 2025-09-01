@@ -15,18 +15,24 @@ REMOTE_PATTERNS = re.compile(
 def is_remote_text(text: str) -> bool:
     return bool(REMOTE_PATTERNS.search(text or ""))
 
-# -------------------- HTTP helpers --------------------
-
-# crawlers/base.py (improve fetch)
-import time
-import random
+# crawlers/base.py
+from __future__ import annotations
+import os, time, random, json
+from typing import Callable, Any
 import requests
+from bs4 import BeautifulSoup
+
+# --- Optional Cloudflare client
+try:
+    import cloudscraper  # pip install cloudscraper
+except Exception:
+    cloudscraper = None
 
 DEFAULT_HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) "
-        "Chrome/120.0 Safari/537.36"
+        "Chrome/123.0 Safari/537.36"
     ),
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Accept-Language": "en-US,en;q=0.9",
@@ -34,41 +40,121 @@ DEFAULT_HEADERS = {
     "Pragma": "no-cache",
 }
 
-def fetch(url: str, *, timeout: int = 25, retries: int = 3, sleep_base: float = 1.0) -> str:
-    last_status = None
-    last_err = None
+def _session():
+    # Optional proxy via env: HTTP_PROXY/HTTPS_PROXY
+    s = requests.Session()
+    s.headers.update(DEFAULT_HEADERS.copy())
+    return s
+
+def _maybe_cloudflare():
+    if os.getenv("DISABLE_CLOUDSCRAPER") == "1":
+        return None
+    return cloudscraper.create_scraper() if cloudscraper else None
+
+def _do_get(sess, url, timeout):
+    return sess.get(url, timeout=timeout)
+
+def fetch(url: str, *, timeout: int = 25, retries: int = 3, sleep_base: float = 1.0, headers: dict | None = None) -> str:
+    """
+    Robust HTML/text fetch with retries, exponential backoff, and optional Cloudflare bypass.
+    Never returns empty string for a 200 response (basic sanity check).
+    Raises RuntimeError only after exhausting retries.
+    """
+    hdrs = DEFAULT_HEADERS.copy()
+    if headers:
+        hdrs.update(headers)
+
+    sess = _session()
+    sess.headers.update(hdrs)
+
+    cf = _maybe_cloudflare()
+
+    last_status, last_err = None, None
     for i in range(retries):
         try:
-            resp = requests.get(url, headers=DEFAULT_HEADERS, timeout=timeout)
-            last_status = resp.status_code
-            if resp.status_code == 200 and resp.text and len(resp.text) > 200:
-                return resp.text
-            # 403/429/backoff
+            r = _do_get(sess, url, timeout)
+            last_status = r.status_code
+            if r.status_code == 200 and r.text and len(r.text) > 200:
+                return r.text
+            if r.status_code in (403, 429, 503) and cf is not None:
+                r2 = cf.get(url, timeout=timeout, headers=hdrs)
+                last_status = r2.status_code
+                if r2.status_code == 200 and r2.text and len(r2.text) > 200:
+                    return r2.text
         except Exception as e:
             last_err = e
+        # backoff + jitter
         time.sleep(sleep_base * (2 ** i) + random.random())
     raise RuntimeError(f"fetch({url}) failed: status={last_status} err={last_err}")
 
-
-import os
-from bs4 import BeautifulSoup, FeatureNotFound
+def fetch_json(url: str, **kw) -> Any:
+    txt = fetch(url, **kw)
+    return json.loads(txt)
 
 def soupify(html: str) -> BeautifulSoup:
-    """
-    Use lxml if installed; otherwise fall back to Python's built-in html.parser.
-    You can force a parser via .env: BS_PARSER=html.parser or lxml
-    """
-    preferred = (os.getenv("BS_PARSER") or "").strip()
-    candidates = [preferred] if preferred else []
-    candidates += ["lxml", "html.parser"]
+    return BeautifulSoup(html, "lxml")
 
-    for parser in candidates:
+def parse_rss(xml_text: str) -> list[dict]:
+    soup = BeautifulSoup(xml_text, "xml")
+    items = []
+    entries = soup.find_all("item") or soup.find_all("entry")
+    for e in entries:
+        def _find(*names):
+            for n in names:
+                tag = e.find(n)
+                if tag:
+                    return tag
+            return None
+        title = (_find("title").get_text(strip=True) if _find("title") else "")
+        link = ""
+        tag_link = _find("link")
+        if tag_link:
+            if tag_link.has_attr("href"):  # Atom
+                link = tag_link["href"]
+            else:  # RSS
+                link = tag_link.get_text(strip=True)
+        if not link and _find("guid"):
+            link = _find("guid").get_text(strip=True)
+        desc_tag = _find("description", "content", "summary")
+        description = desc_tag.get_text(" ", strip=True) if desc_tag else ""
+        pub = (_find("pubDate", "updated", "published").get_text(strip=True)
+               if _find("pubDate", "updated", "published") else "")
+        if title and link:
+            items.append({"title": title, "link": link, "description": description, "published": pub})
+    return items
+
+# ---- Safe text helpers used by scrapers
+def txt(node, sep=" ", strip=True) -> str:
+    try:
+        return node.get_text(sep=sep, strip=strip)
+    except Exception:
+        return ""
+
+def attr(node, name: str, default: str = "") -> str:
+    try:
+        v = node.get(name)
+        return v if isinstance(v, str) else default
+    except Exception:
+        return default
+
+def abs_url(base: str, href: str) -> str:
+    from urllib.parse import urljoin
+    return urljoin(base, href or "")
+
+# ---- Non-crashing wrapper for scrapers
+def no_fail(fn: Callable[..., list[dict]]) -> Callable[..., list[dict]]:
+    def wrapper(*a, **kw) -> list[dict]:
         try:
-            return BeautifulSoup(html, parser)
-        except FeatureNotFound:
-            continue
-    # final fallback
-    return BeautifulSoup(html, "html.parser")
+            return fn(*a, **kw) or []
+        except Exception as e:
+            print(f"[scraper:{fn.__name__}] swallowed error: {e}")
+            return []
+    return wrapper
+
+def soupify(html: str) -> BeautifulSoup:
+    return BeautifulSoup(html, "lxml")
+
+
 
 
 # -------------------- Salary parsing (robust) --------------------
